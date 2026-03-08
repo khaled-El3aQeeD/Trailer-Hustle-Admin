@@ -146,7 +146,7 @@ class UserService {
         const pageSize = 1000;
         int offset = 0;
         while (true) {
-          var query = SupabaseConfig.client.from(t).select(select);
+          dynamic query = SupabaseConfig.client.from(t).select(select);
           if (orderBy != null) {
             query = query.order(orderBy, ascending: ascending);
           }
