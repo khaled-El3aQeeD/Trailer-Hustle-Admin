@@ -251,19 +251,33 @@ class GiveawayService {
           debugPrint('GiveawayService.refresh: failed to fetch declarewinners: $e');
         }
 
-        final participantsRows = await SupabaseConfig.client
-            .from(_participantsTable)
-            .select('*')
-            .inFilter('giveAwayId', ids);
+        // PostgREST returns at most ~1000 rows by default. With 2000+
+        // participants across all giveaways we must paginate to get them all.
+        final List<dynamic> allParticipantRows = [];
+        {
+          const pageSize = 1000;
+          int offset = 0;
+          while (true) {
+            final batch = await SupabaseConfig.client
+                .from(_participantsTable)
+                .select('*')
+                .inFilter('giveAwayId', ids)
+                .range(offset, offset + pageSize - 1);
+            final batchList = batch as List;
+            allParticipantRows.addAll(batchList);
+            if (batchList.length < pageSize) break;
+            offset += pageSize;
+          }
+        }
 
-        debugPrint('GiveawayService.refresh: fetched ${(participantsRows as List).length} participants');
+        debugPrint('GiveawayService.refresh: fetched ${allParticipantRows.length} participants (paginated)');
 
         final participantUserIds = <String>{};
         // Some schemas store business IDs as ints (as in your generated types).
         final participantBusinessIdsInt = <int>{};
 
         var loggedParticipantShape = false;
-        for (final pr in (participantsRows as List).whereType<Map>()) {
+        for (final pr in allParticipantRows.whereType<Map>()) {
           final map = _normalizeKeys(pr.map((k, v) => MapEntry(k.toString(), v)));
           if (!loggedParticipantShape) {
             loggedParticipantShape = true;

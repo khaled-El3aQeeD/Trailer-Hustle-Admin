@@ -140,7 +140,26 @@ class UserService {
     Object? lastErr;
     for (final t in _businessesTableCandidates) {
       try {
-        return await SupabaseService.select(t, select: select, orderBy: orderBy, ascending: ascending);
+        // PostgREST returns at most ~1000 rows per request.
+        // Paginate to get all businesses.
+        final all = <Map<String, dynamic>>[];
+        const pageSize = 1000;
+        int offset = 0;
+        while (true) {
+          var query = SupabaseConfig.client.from(t).select(select);
+          if (orderBy != null) {
+            query = query.order(orderBy, ascending: ascending);
+          }
+          final batch = await query.range(offset, offset + pageSize - 1);
+          final batchList = (batch as List)
+              .whereType<Map>()
+              .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+              .toList(growable: false);
+          all.addAll(batchList);
+          if (batchList.length < pageSize) break;
+          offset += pageSize;
+        }
+        return all;
       } catch (e) {
         lastErr = e;
       }
