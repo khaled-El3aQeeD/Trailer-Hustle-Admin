@@ -1,4 +1,5 @@
 import 'package:trailerhustle_admin/models/giveaway_participant.dart';
+import 'package:trailerhustle_admin/services/giveaway_service.dart';
 
 class Giveaway {
   final String id;
@@ -141,7 +142,7 @@ class Giveaway {
       id: (row['id'] ?? '').toString(),
       title: (row['title'] ?? '').toString(),
       description: (row['description'] ?? '').toString(),
-      image: (row['image'] ?? '').toString(),
+      image: GiveawayService.resolveStorageUrl(row['image']) ?? (row['image'] ?? '').toString(),
       termsAndConditions: (row['termsAndConditions'] ?? row['terms_and_conditions'] ?? '').toString(),
       howToParticipate: row['howToParticipate']?.toString(),
       sponsorId: (row['sponsorId'] is int)

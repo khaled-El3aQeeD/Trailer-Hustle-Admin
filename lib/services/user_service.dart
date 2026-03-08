@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:trailerhustle_admin/models/user_data.dart';
 import 'package:trailerhustle_admin/supabase/supabase_config.dart';
+import 'package:trailerhustle_admin/services/giveaway_service.dart';
 
 /// Service used by the admin dashboard to read/update Businesses.
 ///
@@ -219,9 +220,13 @@ class UserService {
             final u = UserData.fromJson(r);
             final id = u.id.trim();
 
+            // Resolve bare‐filename avatars to full Storage URLs.
+            final resolvedAvatar = GiveawayService.resolveStorageUrl(u.avatar) ?? u.avatar;
+            var working = resolvedAvatar != u.avatar ? u.copyWith(avatar: resolvedAvatar) : u;
+
             // Attach the category label (if missing in the raw row).
             String? categoryType;
-            if (u.categoryType.trim().isEmpty) {
+            if (working.categoryType.trim().isEmpty) {
               final categoryIdRaw = r['category_id'] ?? r['categoryId'];
               final categoryId = categoryIdRaw is int
                   ? categoryIdRaw
@@ -232,13 +237,13 @@ class UserService {
 
             // If the Businesses table doesn't have a business_number column,
             // we still show a stable generated one in the UI.
-            if (u.customerNumber.trim().isEmpty && id.isNotEmpty) {
+            if (working.customerNumber.trim().isEmpty && id.isNotEmpty) {
               final fromSerial = _generateBusinessNumberFromSerialId(id);
-              final base = fromSerial.isNotEmpty ? u.copyWith(customerNumber: fromSerial) : u.copyWith(customerNumber: _generateCustomerNumber(id));
+              final base = fromSerial.isNotEmpty ? working.copyWith(customerNumber: fromSerial) : working.copyWith(customerNumber: _generateCustomerNumber(id));
               return categoryType == null ? base : base.copyWith(categoryType: categoryType);
             }
             // If id is empty (odd schema), keep as-is.
-            return categoryType == null ? u : u.copyWith(categoryType: categoryType);
+            return categoryType == null ? working : working.copyWith(categoryType: categoryType);
           })
           .toList(growable: false);
     } catch (e) {
@@ -254,7 +259,10 @@ class UserService {
       try {
         final row = await SupabaseService.selectSingle(t, filters: {'id': businessId});
         if (row == null) continue;
-        final u = UserData.fromJson(row);
+        var u = UserData.fromJson(row);
+        // Resolve bare-filename avatar to full Storage URL.
+        final resolved = GiveawayService.resolveStorageUrl(u.avatar) ?? u.avatar;
+        if (resolved != u.avatar) u = u.copyWith(avatar: resolved);
         if (u.customerNumber.trim().isNotEmpty) return u;
         final fromSerial = _generateBusinessNumberFromSerialId(u.id);
         return fromSerial.isNotEmpty ? u.copyWith(customerNumber: fromSerial) : u.copyWith(customerNumber: _generateCustomerNumber(u.id));

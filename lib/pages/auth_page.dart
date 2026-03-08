@@ -1,7 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:trailerhustle_admin/auth/auth_controller.dart';
 import 'package:trailerhustle_admin/auth/supabase_auth_manager.dart';
 
 class AuthPage extends StatefulWidget {
@@ -51,7 +49,6 @@ class _AuthPageState extends State<AuthPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final auth = context.watch<AuthController>();
 
     return Scaffold(
       body: SafeArea(
@@ -111,27 +108,7 @@ class _AuthPageState extends State<AuthPage> {
                             }),
                     child: Text(_isSignUp ? 'I already have an account' : 'Create an account'),
                   ),
-                  const SizedBox(height: 10),
-                  OutlinedButton.icon(
-                    onPressed: _busy
-                        ? null
-                        : () {
-                            context.read<AuthController>().enableBypassLoginForTesting();
-                          },
-                    icon: const Icon(Icons.shield_outlined),
-                    label: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 10),
-                      child: Text('Bypass login for testing'),
-                    ),
-                  ),
                   const SizedBox(height: 12),
-                  if (kDebugMode)
-                    Text(
-                      'Auth state: ${auth.isSignedIn ? 'signed in' : 'signed out'}'
-                      '${auth.isBypassLoginForTestingEnabled ? ' (bypassed)' : ''}',
-                      style: theme.textTheme.labelSmall,
-                      textAlign: TextAlign.center,
-                    ),
                 ],
               ),
             ),

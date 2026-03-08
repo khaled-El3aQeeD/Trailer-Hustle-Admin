@@ -814,7 +814,7 @@ class _GiveawayViewAndEditSheetState extends State<_GiveawayViewAndEditSheet> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: isArchived ? null : _pickSchedule,
+                    onPressed: _pickSchedule,
                     icon: Icon(Icons.event, color: context.foreground),
                     label: Text('Edit archive date & time', style: TextStyle(color: context.foreground)),
                   ),

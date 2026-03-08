@@ -16,21 +16,41 @@ class GiveawayService {
   static const String _usersTable = 'users';
   static const String _declareWinnersTable = 'declarewinners';
 
-  /// Supabase Storage bucket used for giveaway cover images.
+  /// Supabase Storage bucket used for all images in this project.
   ///
-  /// If uploads fail with a “Bucket not found” error, create this bucket in the
-  /// Supabase dashboard (Storage → New bucket) and ensure the current role has
-  /// permission to upload.
-  static const String giveawayImagesBucket = 'giveaway-images';
-  // Some projects use different naming/casing for this table. We'll attempt several.
-  // Note: user mentioned “Businesse” specifically, so we include that too.
+  /// The mobile app and backend both use a single public bucket named `images`.
+  static const String imagesBucket = 'images';
+
+  /// Legacy alias kept for backward compatibility with any code that references
+  /// the old bucket name. New uploads should use [imagesBucket].
+  static const String giveawayImagesBucket = 'images';
+
+  // The exact table name is "Businesses" (capital B, quoted identifier).
+  // We put the correct name first so the lookup succeeds on the first attempt.
   static const List<String> _businessesTableCandidates = [
-    'businesses',
     'Businesses',
     'Business',
-    'Businesse',
-    'BUSINESSES',
+    'businesses',
   ];
+
+  /// Convert a raw image value (which may be just a filename like `abc-123.jpg`)
+  /// into a full Supabase Storage public URL.
+  ///
+  /// If the value is already an `http(s)://` URL it is returned as-is.
+  /// If it is empty/null, returns null.
+  static String? resolveStorageUrl(dynamic raw) {
+    if (raw == null) return null;
+    final s = raw.toString().trim();
+    if (s.isEmpty) return null;
+    if (s.startsWith('http://') || s.startsWith('https://')) return s;
+    // It's a bare filename stored in the shared 'images' bucket.
+    try {
+      return SupabaseConfig.client.storage.from(imagesBucket).getPublicUrl(s);
+    } catch (e) {
+      debugPrint('resolveStorageUrl failed for "$s": $e');
+      return null;
+    }
+  }
 
   static String _contentTypeFromFilename(String filename) {
     final lower = filename.toLowerCase();
@@ -49,7 +69,7 @@ class GiveawayService {
     try {
       final safeFilename = filename.trim().isEmpty ? 'image.jpg' : filename.trim();
       final path = 'giveaways/${DateTime.now().toUtc().millisecondsSinceEpoch}_$safeFilename';
-      final storage = SupabaseConfig.client.storage.from(giveawayImagesBucket);
+      final storage = SupabaseConfig.client.storage.from(imagesBucket);
       await storage.uploadBinary(
         path,
         bytes,
@@ -124,16 +144,15 @@ class GiveawayService {
       }
 
       String? _extractImageUrl(Map<String, dynamic> normalized) {
-        // Accepts either a full URL or a best-effort string.
-        // NOTE: If your schema stores a Storage *path* (e.g. "logos/123.png"),
-        // we cannot reliably convert it to a public URL without knowing the bucket.
-        return _optString(
-          normalized['avatar_url'] ??
+        // Try known image column names in priority order.
+        // The Businesses table uses `profile_image` (a bare filename in the `images` bucket).
+        final raw = _optString(
+          normalized['profile_image'] ??
+              normalized['profileimage'] ??
+              normalized['avatar_url'] ??
               normalized['avatar'] ??
               normalized['profile_photo'] ??
               normalized['profilephoto'] ??
-              normalized['profile_image'] ??
-              normalized['profileimage'] ??
               normalized['photo_url'] ??
               normalized['photourl'] ??
               normalized['image_url'] ??
@@ -144,7 +163,6 @@ class GiveawayService {
               normalized['logo_url'] ??
               normalized['logourl'] ??
               normalized['logo'] ??
-              // Common camelCase variants (we still include them even though we add lowercase keys).
               normalized['logoUrl'] ??
               normalized['logoURL'] ??
               normalized['imageUrl'] ??
@@ -156,6 +174,8 @@ class GiveawayService {
               normalized['logo_key'] ??
               normalized['logokey'],
         );
+        // Resolve bare filenames into full Storage URLs.
+        return resolveStorageUrl(raw);
       }
 
       void _debugImageFieldsIfMissing({required String participantId, required Map<String, dynamic> business}) {
@@ -197,8 +217,6 @@ class GiveawayService {
       // Tracks a business reference found on participant rows (if present).
       final participantBusinessIdByUserId = <String, String>{};
 
-      // Best-effort user profile enrichment: id -> row from `public.users`.
-      final userProfileById = <String, Map<String, dynamic>>{};
       // Best-effort business enrichment: by business id and by user id.
       final businessById = <String, Map<String, dynamic>>{};
       final businessByUserId = <String, Map<String, dynamic>>{};
@@ -420,50 +438,49 @@ class GiveawayService {
           );
         }
 
-        // Batch fetch profiles for all participants.
-        if (participantUserIds.isNotEmpty) {
+        // In this project giveawayparticipants.userId references Businesses.id
+        // (NOT auth.users). The `public.Users` table is admin-only and contains
+        // admin accounts. So enrichment from `Users` is skipped.
+        //
+        // Instead, business data was already fetched above into businessById.
+        // If that lookup succeeded we have all the data we need.
+        // As a fallback, if the businessById map is empty we do a direct lookup.
+        if (businessById.isEmpty && participantBusinessIdsInt.isNotEmpty) {
           try {
-            final userRows = await SupabaseConfig.client
-                .from(_usersTable)
+            final fallbackRows = await SupabaseConfig.client
+                .from('Businesses')
                 .select('*')
-                .inFilter('id', participantUserIds.toList(growable: false));
+                .inFilter('id', participantBusinessIdsInt.toList(growable: false));
 
-            for (final ur in (userRows as List).whereType<Map>()) {
-              final m = ur.map((k, v) => MapEntry(k.toString(), v));
-              final id = (m['id'] ?? '').toString();
-              if (id.isEmpty) continue;
-              userProfileById[id] = m;
+            for (final row in (fallbackRows as List).whereType<Map>()) {
+              final normalized = _normalizeKeys(row.map((k, v) => MapEntry(k.toString(), v)));
+              final id = _optString(normalized['id']);
+              if (id != null) businessById[id] = normalized;
             }
-
-            debugPrint('GiveawayService.refresh: fetched ${userProfileById.length} user profiles');
+            debugPrint('GiveawayService.refresh: fallback business fetch got ${businessById.length} rows');
           } catch (e) {
-            // Not fatal. If `users` is locked down by RLS or missing, we still show ids.
-            debugPrint('GiveawayService.refresh: failed to fetch user profiles: $e');
+            debugPrint('GiveawayService.refresh: fallback business fetch failed: $e');
           }
         }
       }
 
-      // Enrich participants with business + user profile fields (best-effort).
-      // Priority for Company name:
-      // 1) participant row (already in p.companyName unless placeholder)
-      // 2) businesses table (by user id or business id)
-      // 3) users table
+      // Enrich participants with business data from the Businesses table.
+      // In this schema giveawayparticipants.userId == Businesses.id (numeric).
       for (final entry in participantsByGiveawayId.entries) {
         final updated = <GiveawayParticipant>[];
         for (final p in entry.value) {
           final isPlaceholder = p.companyName.startsWith('User #');
 
-          String? businessName;
+          // Look up the Businesses row for this participant.
+          // The userId from giveawayparticipants IS the Businesses.id.
           Map<String, dynamic>? b;
-          if (businessByUserId.isNotEmpty) b = businessByUserId[p.userId];
-          // In many schemas (including the generated types in this repo), giveawayparticipants.userId
-          // references Businesses.id (numeric). So try direct id match as well.
-          b ??= businessById[p.userId];
+          b = businessById[p.userId];
+          b ??= businessByUserId[p.userId];
           b ??= businessById[participantBusinessIdByUserId[p.userId]];
-          if (b != null) businessName = _extractBusinessName(b);
 
-          // Businesses often store contact fields (email/phone) even when `public.users` does not.
-          // We try several common column names (case-insensitive due to _normalizeKeys).
+          final businessName = b == null ? null : _extractBusinessName(b);
+
+          // Email: Businesses uses `email` and `contact_email`.
           final businessEmail = b == null
               ? null
               : _optString(
@@ -473,61 +490,32 @@ class GiveawayService {
                       b['owner_email'] ??
                       b['owneremail'],
                 );
+          // Phone: Businesses uses `mobile_number` and `business_contact_number`.
           final businessPhone = b == null
               ? null
               : _optString(
-                  b['phone'] ??
-                      b['phone_number'] ??
-                      b['phonenumber'] ??
-                      b['mobile'] ??
+                  b['mobile_number'] ??
+                      b['mobilenumber'] ??
                       b['mobile_number'] ??
-                      b['mobilenumber'],
+                      b['business_contact_number'] ??
+                      b['phone'] ??
+                      b['phone_number'] ??
+                      b['phonenumber'],
                 );
 
-          final businessAvatar = b == null
-              ? null
-              : _extractImageUrl(b);
+          final businessAvatar = b == null ? null : _extractImageUrl(b);
 
-          final profile = userProfileById[p.userId];
-          final name = profile == null ? null : _optString(profile['name']);
-          final profileAvatar = profile == null
-              ? null
-              : _extractImageUrl(_normalizeKeys(profile));
-          final email = _optString(
-            p.email ?? (profile == null ? null : profile['email']) ?? businessEmail,
-          );
-          final phone = _optString(
-            p.phone ??
-                (profile == null
-                    ? null
-                    : (profile['phone'] ?? profile['phone_number'] ?? profile['mobile'])) ??
-                businessPhone,
-          );
-          final avatarUrl = _optString(p.avatarUrl ?? profileAvatar ?? businessAvatar);
-
-          if (avatarUrl == null && b != null) {
-            // Helps us quickly see which column contains the logo in your schema.
-            _debugImageFieldsIfMissing(participantId: p.userId, business: b);
-          }
-
-          final userCompany = profile == null
-              ? null
-              : _optString(
-                  profile['company_name'] ??
-                      profile['companyName'] ??
-                      profile['business_name'] ??
-                      profile['businessName'] ??
-                      profile['company'],
-                );
-
-          final companyName = (!isPlaceholder ? p.companyName : (businessName ?? userCompany ?? p.companyName));
+          final email = _optString(p.email ?? businessEmail);
+          final phone = _optString(p.phone ?? businessPhone);
+          final avatarUrl = _optString(p.avatarUrl) ?? businessAvatar;
+          final companyName = (!isPlaceholder ? p.companyName : (businessName ?? p.companyName));
 
           updated.add(
             GiveawayParticipant(
               userId: p.userId,
               companyName: companyName,
               avatarUrl: avatarUrl,
-              name: name,
+              name: businessName,
               email: email,
               phone: phone,
               enteredAt: p.enteredAt,
