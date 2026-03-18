@@ -11,6 +11,7 @@ import 'package:trailerhustle_admin/theme.dart';
 import 'package:trailerhustle_admin/widgets/dashboard_header.dart';
 import 'package:trailerhustle_admin/widgets/giveaway_image_uploader.dart';
 import 'package:trailerhustle_admin/widgets/sponsor_info_card.dart';
+import 'package:trailerhustle_admin/widgets/sponsor_picker_dialog.dart';
 import 'package:trailerhustle_admin/widgets/sidebar.dart';
 import 'package:trailerhustle_admin/services/sponsor_service.dart';
 import 'package:trailerhustle_admin/models/sponsor_data.dart';
@@ -741,10 +742,30 @@ class _GiveawayViewAndEditSheetState extends State<_GiveawayViewAndEditSheet> {
               maxLines: 3,
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _sponsorId,
-              decoration: const InputDecoration(labelText: 'Sponsor ID'),
-              keyboardType: TextInputType.number,
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _sponsorId,
+                    decoration: const InputDecoration(labelText: 'Sponsor ID'),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 48,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final picked = await SponsorPickerDialog.show(context);
+                      if (picked != null && mounted) {
+                        _sponsorId.text = picked.id.toString();
+                      }
+                    },
+                    icon: const Icon(Icons.search, size: 18),
+                    label: const Text('Browse'),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             AnimatedSwitcher(
@@ -1358,13 +1379,33 @@ class _CreateGiveawaySheetState extends State<_CreateGiveawaySheet> {
               maxLines: 3,
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _sponsorIdController,
-              decoration: const InputDecoration(
-                labelText: 'Sponsor ID',
-                hintText: 'Numeric sponsor id (as stored in Supabase)',
-              ),
-              keyboardType: TextInputType.number,
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _sponsorIdController,
+                    decoration: const InputDecoration(
+                      labelText: 'Sponsor ID',
+                      hintText: 'Numeric sponsor id (as stored in Supabase)',
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 48,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final picked = await SponsorPickerDialog.show(context);
+                      if (picked != null && mounted) {
+                        _sponsorIdController.text = picked.id.toString();
+                      }
+                    },
+                    icon: const Icon(Icons.search, size: 18),
+                    label: const Text('Browse'),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             AnimatedSwitcher(

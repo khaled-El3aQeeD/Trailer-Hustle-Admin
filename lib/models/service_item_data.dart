@@ -53,7 +53,7 @@ class ServiceItemData {
     );
   }
 
-  static DateTime _parseDate(dynamic v) {
+  static DateTime parseDate(dynamic v) {
     if (v == null) return DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
     if (v is DateTime) return v.toUtc();
     return DateTime.tryParse(v.toString())?.toUtc() ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
@@ -102,8 +102,8 @@ class ServiceItemData {
       currency: currency.isEmpty ? 'USD' : currency,
       type: type,
       isActive: isActive,
-      createdAt: _parseDate(json['created_at'] ?? json['createdAt']),
-      updatedAt: _parseDate(json['updated_at'] ?? json['updatedAt']),
+      createdAt: parseDate(json['created_at'] ?? json['createdAt']),
+      updatedAt: parseDate(json['updated_at'] ?? json['updatedAt']),
     );
   }
 

@@ -7,6 +7,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:trailerhustle_admin/models/user_data.dart';
 import 'package:trailerhustle_admin/services/file_export_service.dart';
+import 'package:trailerhustle_admin/services/product_service.dart';
 import 'package:trailerhustle_admin/services/trailer_service.dart';
 import 'package:trailerhustle_admin/services/user_service.dart';
 import 'package:trailerhustle_admin/widgets/user_profile_dialog.dart';
@@ -25,6 +26,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
   String? _error;
   List<UserData> _all = const [];
   Map<int, int> _trailerCounts = const {};
+  Map<int, int> _productCounts = const {};
 
   int _subscriptionFilter = 0; // 0 all, 1 subscribed, 2 not
   int _activeFilter = 0; // 0 all, 1 active, 2 inactive
@@ -64,9 +66,15 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
       // Try to batch-load trailer counts for the businesses in the list.
       // This is best-effort; the table still renders even if this fails.
       Map<int, int> trailerCounts = const {};
+      Map<int, int> productCounts = const {};
       try {
         final businessIds = list.map((u) => int.tryParse(u.id)).whereType<int>().toList(growable: false);
-        trailerCounts = await TrailerService.fetchTrailerCountsForBusinesses(businessIds: businessIds);
+        final results = await Future.wait([
+          TrailerService.fetchTrailerCountsForBusinesses(businessIds: businessIds),
+          ProductService.fetchProductCountsForBusinesses(businessIds),
+        ]);
+        trailerCounts = results[0];
+        productCounts = results[1];
       } catch (e) {
         debugPrint('CustomersTableCard trailer count refresh failed: $e');
       }
@@ -74,6 +82,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
       setState(() {
         _all = list;
         _trailerCounts = trailerCounts;
+        _productCounts = productCounts;
 
         // Keep the selected category stable, but if it no longer exists, reset.
         final options = _categoryOptionsFrom(list);
@@ -455,6 +464,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
 
     final businessId = int.tryParse(u.id);
     final trailerCount = businessId == null ? null : _trailerCounts[businessId];
+    final productCount = businessId == null ? null : _productCounts[businessId];
 
     return DataRow(
       cells: [
@@ -561,6 +571,18 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
             ),
           ),
           onTap: trailerCount == null ? null : () => UserProfileDialog.show(context, user: u, initialTabIndex: 1),
+        ),
+        DataCell(
+          Text(
+            productCount?.toString() ?? '—',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: productCount == null ? theme.colors.mutedForeground : theme.colors.primary,
+              fontWeight: FontWeight.w800,
+              decoration: productCount == null ? null : TextDecoration.underline,
+              decorationColor: theme.colors.primary.withValues(alpha: 0.55),
+            ),
+          ),
+          onTap: productCount == null ? null : () => UserProfileDialog.show(context, user: u, initialTabIndex: 2),
         ),
         DataCell(
           _pill(
@@ -813,6 +835,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
                               DataColumn(label: Text('Category Type')),
                               DataColumn(label: Text('Created on Date')),
                               DataColumn(label: Text('Trailers')),
+  DataColumn(label: Text('Products')),
                               DataColumn(label: Text('Subscription')),
                               DataColumn(label: Text('Status')),
                               DataColumn(label: Text('Is Featured?')),

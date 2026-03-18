@@ -5,6 +5,7 @@ import 'package:trailerhustle_admin/models/service_item_data.dart';
 import 'package:trailerhustle_admin/models/trailer_data.dart';
 import 'package:trailerhustle_admin/models/user_data.dart';
 import 'package:trailerhustle_admin/services/service_item_service.dart';
+import 'package:trailerhustle_admin/services/product_service.dart';
 import 'package:trailerhustle_admin/services/trailer_service.dart';
 
 /// Business details pop-up (used for Businesses table records).
@@ -215,7 +216,7 @@ class _ServicesTab extends StatefulWidget {
 }
 
 class _ServicesTabState extends State<_ServicesTab> {
-  Future<List<ServiceItemData>>? _future;
+  Future<({List<ServiceItemData> services, List<ServiceItemData> products})>? _future;
   int _modeIndex = 0; // 0 = services, 1 = products
 
   @override
@@ -224,24 +225,48 @@ class _ServicesTabState extends State<_ServicesTab> {
     _future = _load();
   }
 
-  Future<List<ServiceItemData>> _load() async {
+  Future<({List<ServiceItemData> services, List<ServiceItemData> products})> _load() async {
     final businessId = int.tryParse(widget.user.id.trim());
     if (businessId == null) {
       debugPrint('Services tab: could not parse business id from user.id="${widget.user.id}"');
-      return const <ServiceItemData>[];
+      return (services: const <ServiceItemData>[], products: const <ServiceItemData>[]);
     }
-    return ServiceItemService.fetchServicesForBusiness(businessId: businessId);
+
+    // Fetch from both sources in parallel
+    final results = await Future.wait([
+      ServiceItemService.fetchServicesForBusiness(businessId: businessId),
+      ProductService.fetchProductsForBusiness(businessId: businessId),
+    ]);
+
+    final serviceItems = results[0];
+    final productItems = results[1];
+
+    // Split serviceItems into services vs products (from the services table)
+    final services = <ServiceItemData>[];
+    final productsFromServices = <ServiceItemData>[];
+    for (final item in serviceItems) {
+      final type = item.type.trim().toLowerCase();
+      if (type.contains('product')) {
+        productsFromServices.add(item);
+      } else {
+        services.add(item);
+      }
+    }
+
+    // Merge products from both tables (Products table + services table)
+    final allProducts = [...productItems, ...productsFromServices];
+
+    return (services: services, products: allProducts);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
-    return FutureBuilder<List<ServiceItemData>>(
+    return FutureBuilder<({List<ServiceItemData> services, List<ServiceItemData> products})>(
       future: _future,
       builder: (context, snapshot) {
         final isLoading = snapshot.connectionState == ConnectionState.waiting;
         final err = snapshot.error;
-        final items = snapshot.data ?? const <ServiceItemData>[];
 
         if (isLoading) {
           return const _ServicesLoadingState();
@@ -255,27 +280,17 @@ class _ServicesTabState extends State<_ServicesTab> {
           );
         }
 
-        if (items.isEmpty) {
+        final data = snapshot.data;
+        final services = data?.services ?? const <ServiceItemData>[];
+        final products = data?.products ?? const <ServiceItemData>[];
+
+        if (services.isEmpty && products.isEmpty) {
           final businessId = int.tryParse(widget.user.id.trim());
           final hint = businessId == null
-              ? 'This business record has a non-numeric id ("${widget.user.id}").\nThe Services table is typically filtered by a numeric business id.'
-               : 'No services found in Supabase table "services" (or "Services") for this business id ($businessId).';
-
-          // Keep the technical hint in logs for debugging, but show a user-friendly empty state.
+              ? 'This business record has a non-numeric id ("${widget.user.id}").'
+              : 'No services or products found for business id ($businessId).';
           debugPrint('Services tab empty-state debug hint: $hint');
           return const _ServicesEmptyState();
-        }
-
-        final services = <ServiceItemData>[];
-        final products = <ServiceItemData>[];
-        for (final item in items) {
-          final type = item.type.trim().toLowerCase();
-          final isProduct = type.contains('product');
-          if (isProduct) {
-            products.add(item);
-          } else {
-            services.add(item);
-          }
         }
 
         final showingProducts = _modeIndex == 1;
@@ -325,7 +340,7 @@ class _ServicesTabState extends State<_ServicesTab> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Source: Supabase services table • Showing ${showingProducts ? 'products' : 'services'}',
+                  'Source: Supabase services & Products tables • Showing ${showingProducts ? 'products' : 'services'}',
                   style: theme.typography.xs.copyWith(color: theme.colors.mutedForeground, fontWeight: FontWeight.w800),
                 ),
               ),
