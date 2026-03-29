@@ -6,6 +6,10 @@ class Giveaway {
   final String title;
   final String description;
   final String image;
+  /// The raw image value as stored in the database (bare filename or URL).
+  /// Used when saving edits so we don't accidentally overwrite a bare filename
+  /// with the resolved full URL, which could break the mobile app's image chain.
+  final String rawImage;
   final String termsAndConditions;
   final String? howToParticipate;
   final int sponsorId;
@@ -23,6 +27,7 @@ class Giveaway {
     required this.title,
     required this.description,
     required this.image,
+    String? rawImage,
     required this.termsAndConditions,
     required this.sponsorId,
     this.howToParticipate,
@@ -33,7 +38,7 @@ class Giveaway {
     required this.participants,
     this.archivedAt,
     this.winnerUserId,
-  });
+  }) : rawImage = rawImage ?? image;
 
   bool get isArchived => archivedAt != null;
 
@@ -46,6 +51,7 @@ class Giveaway {
     String? title,
     String? description,
     String? image,
+    String? rawImage,
     String? termsAndConditions,
     String? howToParticipate,
     int? sponsorId,
@@ -60,6 +66,7 @@ class Giveaway {
     title: title ?? this.title,
     description: description ?? this.description,
     image: image ?? this.image,
+    rawImage: rawImage ?? this.rawImage,
     termsAndConditions: termsAndConditions ?? this.termsAndConditions,
     sponsorId: sponsorId ?? this.sponsorId,
     howToParticipate: howToParticipate ?? this.howToParticipate,
@@ -135,6 +142,7 @@ class Giveaway {
     final createdAt = DateTime.parse(row['createdAt'].toString()).toLocal();
     final updatedAt = DateTime.parse(row['updatedAt'].toString()).toLocal();
     final announcement = DateTime.parse(row['winnerAnnouncementDate'].toString()).toLocal();
+    final isDraftFlag = (row['isDraft'] ?? 0).toString() == '1';
     final isDeclared = (row['isDeclared'] ?? 0).toString() == '1';
     final isArchivedFlag = (row['isArchived'] ?? 0).toString() == '1';
     final isPast = t.isAfter(announcement) || t.isAtSameMomentAs(announcement);
@@ -146,12 +154,13 @@ class Giveaway {
       title: (row['title'] ?? '').toString(),
       description: (row['description'] ?? '').toString(),
       image: GiveawayService.resolveStorageUrl(row['image']) ?? (row['image'] ?? '').toString(),
+      rawImage: (row['image'] ?? '').toString(),
       termsAndConditions: (row['termsAndConditions'] ?? row['terms_and_conditions'] ?? '').toString(),
       howToParticipate: row['howToParticipate']?.toString(),
       sponsorId: (row['sponsorId'] is int)
           ? (row['sponsorId'] as int)
           : int.tryParse((row['sponsorId'] ?? '0').toString()) ?? 0,
-      isDraft: false,
+      isDraft: isDraftFlag,
       scheduledArchiveAt: announcement,
       createdAt: createdAt,
       updatedAt: updatedAt,

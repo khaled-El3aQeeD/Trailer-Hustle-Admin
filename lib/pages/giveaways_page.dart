@@ -642,16 +642,38 @@ class _GiveawayViewAndEditSheetState extends State<_GiveawayViewAndEditSheet> {
     }
   }
 
+  Future<void> _publishGiveaway() async {
+    setState(() => _saving = true);
+    try {
+      await GiveawayService.publishGiveaway(giveawayId: widget.giveaway.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Giveaway published')));
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      debugPrint('Publish giveaway failed: $e');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to publish giveaway: $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Future<void> _saveEdits() async {
     if (_saving) return;
     setState(() => _saving = true);
     try {
       final sponsorId = int.tryParse(_sponsorId.text.trim()) ?? 0;
+      // If the image hasn't been changed (no new upload / no removal), send the
+      // original raw DB value so we don't overwrite a bare filename with the
+      // resolved full URL — which would break the mobile app's image display.
+      final currentImage = _image.text.trim();
+      final imageChanged = currentImage != widget.giveaway.image;
+      final imageToSave = imageChanged ? currentImage : widget.giveaway.rawImage;
       await GiveawayService.updateGiveawayDetails(
         giveawayId: widget.giveaway.id,
         title: _title.text,
         description: _description.text.trim(),
-        image: _image.text.trim(),
+        image: imageToSave,
         termsAndConditions: _terms.text.trim(),
         sponsorId: sponsorId,
         howToParticipate: _howTo.text.trim().isEmpty ? null : _howTo.text.trim(),
@@ -660,6 +682,38 @@ class _GiveawayViewAndEditSheetState extends State<_GiveawayViewAndEditSheet> {
     } catch (e) {
       debugPrint('Update giveaway failed: $e');
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to update giveaway: $e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _confirmDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete giveaway?'),
+        content: Text('Are you sure you want to delete "${widget.giveaway.title}"? This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Theme.of(ctx).colorScheme.error),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _saving = true);
+    try {
+      await GiveawayService.deleteGiveaway(giveawayId: widget.giveaway.id);
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Giveaway deleted')));
+      }
+    } catch (e) {
+      debugPrint('Delete giveaway failed: $e');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete giveaway: $e')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -702,6 +756,12 @@ class _GiveawayViewAndEditSheetState extends State<_GiveawayViewAndEditSheet> {
                   onPressed: widget.onViewParticipants,
                   icon: Icon(Icons.group_outlined, color: context.foreground),
                   label: Text('Participants', style: TextStyle(color: context.foreground)),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Delete giveaway',
+                  onPressed: _saving ? null : _confirmDelete,
+                  icon: Icon(Icons.delete_outline, color: context.theme.colors.destructive),
                 ),
                 const SizedBox(width: 8),
                 IconButton(
@@ -848,24 +908,38 @@ class _GiveawayViewAndEditSheetState extends State<_GiveawayViewAndEditSheet> {
                 SizedBox(
                   width: 340,
                   child: DropdownMenu<String>(
-                    enabled: !hasWinner && !isDraft && g.participants.isNotEmpty,
+                    enabled: g.participants.isNotEmpty,
                     initialSelection: _winnerUserId,
                     expandedInsets: EdgeInsets.zero,
-                    label: Text(hasWinner ? 'Winner declared' : 'Declare winner'),
+                    label: Text(hasWinner ? 'Change winner' : 'Declare winner'),
                     dropdownMenuEntries: winnerOptions,
                     onSelected: (v) => setState(() => _winnerUserId = v),
                   ),
                 ),
                 const SizedBox(width: 12),
                 FilledButton(
-                  onPressed: hasWinner || isDraft || _winnerUserId == null || _saving ? null : _declareWinner,
+                  onPressed: _winnerUserId == null || _saving || _winnerUserId == g.winnerUserId ? null : _declareWinner,
                   child: _saving
                       ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.onPrimary))
-                      : Text('Declare', style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
+                      : Text(hasWinner ? 'Update winner' : 'Declare', style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
                 ),
               ],
             ),
             const SizedBox(height: 16),
+            if (isDraft)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _saving ? null : _publishGiveaway,
+                    icon: Icon(Icons.public, color: Theme.of(context).colorScheme.onPrimary),
+                    label: _saving
+                        ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.onPrimary))
+                        : Text('Make Active (visible to users)', style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
+                  ),
+                ),
+              ),
             Row(
               children: [
                 Expanded(
@@ -1222,6 +1296,7 @@ class _CreateGiveawaySheetState extends State<_CreateGiveawaySheet> {
   int _lastSponsorId = -1;
 
   DateTime _scheduledArchiveAt = DateTime.now().add(const Duration(days: 30));
+  bool _isDraft = true;
   bool _saving = false;
 
   @override
@@ -1229,6 +1304,14 @@ class _CreateGiveawaySheetState extends State<_CreateGiveawaySheet> {
     super.initState();
     _sponsorIdController.addListener(_onSponsorIdChanged);
     _refreshSponsorFuture();
+    _loadDefaultTerms();
+  }
+
+  Future<void> _loadDefaultTerms() async {
+    final terms = await GiveawayService.fetchDefaultTermsAndConditions();
+    if (mounted && terms.isNotEmpty && _termsController.text.isEmpty) {
+      _termsController.text = terms;
+    }
   }
 
   @override
@@ -1294,6 +1377,7 @@ class _CreateGiveawaySheetState extends State<_CreateGiveawaySheet> {
         sponsorId: sponsorId,
         howToParticipate: _howToController.text.trim().isEmpty ? null : _howToController.text.trim(),
         winnerAnnouncementDate: _scheduledArchiveAt,
+        isDraft: _isDraft,
       );
       if (mounted) Navigator.of(context).pop(created);
     } catch (e) {
@@ -1325,7 +1409,7 @@ class _CreateGiveawaySheetState extends State<_CreateGiveawaySheet> {
                       Text('Create new Giveaway', style: Theme.of(context).textTheme.titleLarge),
                       const SizedBox(height: 6),
                       Text(
-                        'New giveaways start as Drafts by default.',
+                        _isDraft ? 'Will be saved as Draft (not visible to users).' : 'Will be published immediately (visible to users).',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: context.theme.colors.mutedForeground),
                       ),
                     ],
@@ -1481,8 +1565,24 @@ class _CreateGiveawaySheetState extends State<_CreateGiveawaySheet> {
                   child: OutlinedButton.icon(
                     onPressed: _pickSchedule,
                     icon: Icon(Icons.event, color: context.foreground),
-                    label: Text('Archive schedule: ${_formatDateTime(_scheduledArchiveAt)}', style: TextStyle(color: context.foreground)),
+                    label: Text('Winner announcement date: ${_formatDateTime(_scheduledArchiveAt)}', style: TextStyle(color: context.foreground)),
                   ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Text('Status: ', style: Theme.of(context).textTheme.bodyMedium),
+                const SizedBox(width: 8),
+                SegmentedButton<bool>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: true, label: Text('Draft'), icon: Icon(Icons.drafts_outlined, size: 16)),
+                    ButtonSegment(value: false, label: Text('Active'), icon: Icon(Icons.public, size: 16)),
+                  ],
+                  selected: {_isDraft},
+                  onSelectionChanged: (s) => setState(() => _isDraft = s.first),
                 ),
               ],
             ),
@@ -1505,7 +1605,7 @@ class _CreateGiveawaySheetState extends State<_CreateGiveawaySheet> {
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.onPrimary),
                           )
-                        : Text('Create draft', style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
+                        : Text(_isDraft ? 'Create as Draft' : 'Create & Publish', style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
                   ),
                 ),
               ],

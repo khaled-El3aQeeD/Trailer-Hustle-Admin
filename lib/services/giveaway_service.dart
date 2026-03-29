@@ -580,6 +580,7 @@ class GiveawayService {
     required int sponsorId,
     String? howToParticipate,
     required DateTime winnerAnnouncementDate,
+    bool isDraft = true,
   }) async {
     final now = DateTime.now().toUtc().toIso8601String();
     final insert = {
@@ -591,6 +592,7 @@ class GiveawayService {
       'howToParticipate': howToParticipate,
       'winnerAnnouncementDate': winnerAnnouncementDate.toUtc().toIso8601String(),
       'isDeclared': 0,
+      'isDraft': isDraft ? 1 : 0,
       'createdAt': now,
       'updatedAt': now,
     };
@@ -633,12 +635,20 @@ class GiveawayService {
 
   static Future<void> updateSchedule({required String giveawayId, required DateTime scheduledArchiveAt}) async {
     try {
+      final now = DateTime.now();
+      final update = <String, dynamic>{
+        'winnerAnnouncementDate': scheduledArchiveAt.toUtc().toIso8601String(),
+        'updatedAt': now.toUtc().toIso8601String(),
+      };
+      // If the new archive date is in the future, reactivate the giveaway
+      // by clearing the isArchived flag so it shows as active again in both
+      // the admin panel and the mobile app.
+      if (scheduledArchiveAt.isAfter(now)) {
+        update['isArchived'] = 0;
+      }
       await SupabaseService.update(
         _giveawaysTable,
-        {
-          'winnerAnnouncementDate': scheduledArchiveAt.toUtc().toIso8601String(),
-          'updatedAt': DateTime.now().toUtc().toIso8601String(),
-        },
+        update,
         filters: {'id': int.parse(giveawayId)},
       );
       await refresh();
@@ -683,6 +693,24 @@ class GiveawayService {
     }
   }
 
+  /// Publish a draft giveaway (set isDraft = 0).
+  static Future<void> publishGiveaway({required String giveawayId}) async {
+    try {
+      await SupabaseService.update(
+        _giveawaysTable,
+        {
+          'isDraft': 0,
+          'updatedAt': DateTime.now().toUtc().toIso8601String(),
+        },
+        filters: {'id': int.parse(giveawayId)},
+      );
+      await refresh();
+    } catch (e) {
+      debugPrint('GiveawayService.publishGiveaway failed: $e');
+      rethrow;
+    }
+  }
+
   /// Declare a winner and immediately archive (action-based archiving).
   static Future<void> declareWinner({required String giveawayId, required String winnerUserId}) async {
     try {
@@ -721,29 +749,21 @@ class GiveawayService {
 
       // Different projects name this column differently. We prefer camelCase
       // (consistent with the rest of this repo), but fall back to snake_case.
+      // Note: Giveaways table does NOT have a winnerUserId column;
+      // the winner is stored in the declarewinners table.
       try {
         await SupabaseService.update(
           _giveawaysTable,
           {
             'isDeclared': 1,
             'isArchived': 1,
-            'winnerUserId': winnerUserId,
             'updatedAt': now,
           },
           filters: {'id': int.parse(giveawayId)},
         );
       } catch (e) {
-        debugPrint('GiveawayService.declareWinner: camelCase update failed, retrying snake_case: $e');
-        await SupabaseService.update(
-          _giveawaysTable,
-          {
-            'isDeclared': 1,
-            'isArchived': 1,
-            'winner_user_id': winnerUserId,
-            'updatedAt': now,
-          },
-          filters: {'id': int.parse(giveawayId)},
-        );
+        debugPrint('GiveawayService.declareWinner: update Giveaways failed: $e');
+        rethrow;
       }
       await refresh();
     } catch (e) {
@@ -752,18 +772,40 @@ class GiveawayService {
     }
   }
 
+  /// Delete a giveaway and its related declarewinners entry.
+  static Future<void> deleteGiveaway({required String giveawayId}) async {
+    try {
+      final gId = int.parse(giveawayId);
+      // Delete declarewinners entry first (if any)
+      try {
+        await SupabaseConfig.client.from(_declareWinnersTable).delete().eq('giveawayId', gId);
+      } catch (e) {
+        debugPrint('GiveawayService.deleteGiveaway: failed to delete declarewinners: $e');
+      }
+      // Delete participants
+      try {
+        await SupabaseConfig.client.from(_participantsTable).delete().eq('giveAwayId', gId);
+      } catch (e) {
+        debugPrint('GiveawayService.deleteGiveaway: failed to delete participants: $e');
+      }
+      // Delete the giveaway itself
+      await SupabaseConfig.client.from(_giveawaysTable).delete().eq('id', gId);
+      await refresh();
+    } catch (e) {
+      debugPrint('GiveawayService.deleteGiveaway failed: $e');
+      rethrow;
+    }
+  }
+
   static List<Giveaway> getDraftGiveaways() {
-    // Current Supabase schema doesn't have a draft flag.
-    // We treat future announcements as "draft" for the admin UI.
-    final now = DateTime.now();
-    final list = giveaways.value.where((g) => now.isBefore(g.scheduledArchiveAt)).toList(growable: false);
+    final list = giveaways.value.where((g) => g.isDraft).toList(growable: false);
     list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
     return list;
   }
 
   static List<Giveaway> getActiveGiveaways({DateTime? now}) {
     final t = now ?? DateTime.now();
-    final list = giveaways.value.where((g) => !g.isDueForArchive(t)).toList(growable: false);
+    final list = giveaways.value.where((g) => !g.isDraft && !g.isDueForArchive(t)).toList(growable: false);
     list.sort((a, b) => a.scheduledArchiveAt.compareTo(b.scheduledArchiveAt));
     return list;
   }
@@ -788,6 +830,26 @@ class GiveawayService {
     }
 
     return rows.map((r) => r.map(esc).join(',')).join('\n');
+  }
+
+  /// Fetch the default Giveaway Terms & Conditions from the CMS table (type 4).
+  ///
+  /// Returns the HTML string stored in the `description` column, or an empty
+  /// string if no CMS entry exists yet.
+  static Future<String> fetchDefaultTermsAndConditions() async {
+    try {
+      final rows = await SupabaseConfig.client
+          .from('Cms')
+          .select('description')
+          .eq('type', 4)
+          .limit(1);
+      if ((rows as List).isNotEmpty) {
+        return (rows.first['description'] ?? '').toString();
+      }
+    } catch (e) {
+      debugPrint('fetchDefaultTermsAndConditions failed: $e');
+    }
+    return '';
   }
 
   static void debugLogState() {
