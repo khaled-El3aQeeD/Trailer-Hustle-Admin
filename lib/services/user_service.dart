@@ -56,6 +56,7 @@ class UserService {
       isSubscribed: false,
       isActive: true,
       hasHustleProPlan: false,
+      subscriptionTier: 'free',
       createdAt: now,
       updatedAt: now,
     );
@@ -192,9 +193,9 @@ class UserService {
           // `status` is an int in your schema: treat 1 as active.
           'status': userData.isActive ? 1 : 0,
           // `subscriptionStatus` is a string in your schema.
-          'subscriptionStatus': userData.isSubscribed ? 'active' : 'inactive',
-          // `subscriptionType` is smallint; best-effort mapping: 2+ means “Pro”.
-          'subscriptionType': userData.hasHustleProPlan ? 2 : 1,
+          'subscriptionStatus': userData.subscriptionTier == 'free' ? 'inactive' : 'active',
+          // `subscriptionType` is smallint; 0=free, 1=lite, 2=pro.
+          'subscriptionType': userData.subscriptionTier == 'pro' ? 2 : (userData.subscriptionTier == 'lite' ? 1 : 0),
           'updatedAt': DateTime.now().toUtc().toIso8601String(),
         },
         filters: {'id': userData.id},

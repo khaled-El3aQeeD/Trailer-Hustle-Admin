@@ -1339,9 +1339,9 @@ class _BusinessSummaryTab extends StatelessWidget {
                         runSpacing: 10,
                         children: [
                           _StatusChip(
-                            label: user.isSubscribed ? 'Subscribed' : 'Not subscribed',
+                            label: '${user.subscriptionTier[0].toUpperCase()}${user.subscriptionTier.substring(1)} tier',
                             icon: Icons.workspace_premium_outlined,
-                            tone: user.isSubscribed ? _ChipTone.good : _ChipTone.neutral,
+                            tone: user.subscriptionTier == 'pro' ? _ChipTone.good : (user.subscriptionTier == 'lite' ? _ChipTone.good : _ChipTone.neutral),
                           ),
                           _StatusChip(
                             label: user.isActive ? 'Active' : 'Inactive',
@@ -1401,7 +1401,7 @@ class _BusinessSummaryTab extends StatelessWidget {
                 _DetailItem(label: 'Phone', value: phone, icon: FIcons.phone),
                 _DetailItem(label: 'City, State', value: cityState, icon: Icons.map_outlined),
                 _DetailItem(label: 'Website', value: websiteValue, icon: Icons.language_outlined),
-                _DetailItem(label: 'Subscribed', value: user.isSubscribed ? 'Yes' : 'No', icon: Icons.workspace_premium_outlined),
+                _DetailItem(label: 'Tier', value: '${user.subscriptionTier[0].toUpperCase()}${user.subscriptionTier.substring(1)}', icon: Icons.workspace_premium_outlined),
                 _DetailItem(label: 'Active', value: user.isActive ? 'Yes' : 'No', icon: Icons.toggle_on_outlined),
                 _DetailItem(label: 'Featured', value: user.hasHustleProPlan ? 'Yes' : 'No', icon: Icons.auto_awesome_outlined),
                 _DetailItem(label: 'Created', value: createdAt, icon: Icons.schedule_outlined),

@@ -39,6 +39,9 @@ class UserData {
   final bool isActive;
   final bool hasHustleProPlan;
 
+  /// Subscription tier: 'free', 'lite', or 'pro'.
+  final String subscriptionTier;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -55,6 +58,7 @@ class UserData {
     required this.isSubscribed,
     required this.isActive,
     required this.hasHustleProPlan,
+    this.subscriptionTier = 'free',
     required this.createdAt,
     required this.updatedAt,
   });
@@ -72,6 +76,7 @@ class UserData {
     bool? isSubscribed,
     bool? isActive,
     bool? hasHustleProPlan,
+    String? subscriptionTier,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -88,6 +93,7 @@ class UserData {
       isSubscribed: isSubscribed ?? this.isSubscribed,
       isActive: isActive ?? this.isActive,
       hasHustleProPlan: hasHustleProPlan ?? this.hasHustleProPlan,
+      subscriptionTier: subscriptionTier ?? this.subscriptionTier,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -146,7 +152,29 @@ class UserData {
     if (s.contains('pro') || s.contains('premium')) return true;
     return fallback;
   }
-
+  /// Derive subscription tier from subscriptionType (smallint in DB).
+  /// 0 or null → 'free', 1 → 'lite', 2+ → 'pro'.
+  /// Also accepts string values like 'free', 'lite', 'pro'.
+  static String _parseTierFromSubscriptionType(dynamic v, {required bool isSubscribed}) {
+    if (v == null) return isSubscribed ? 'lite' : 'free';
+    if (v is num) {
+      final n = v.toInt();
+      if (n <= 0) return 'free';
+      if (n == 1) return 'lite';
+      return 'pro';
+    }
+    final s = v.toString().trim().toLowerCase();
+    if (s == 'free') return 'free';
+    if (s == 'lite' || s == 'basic') return 'lite';
+    if (s == 'pro' || s == 'premium') return 'pro';
+    final n = int.tryParse(s);
+    if (n != null) {
+      if (n <= 0) return 'free';
+      if (n == 1) return 'lite';
+      return 'pro';
+    }
+    return isSubscribed ? 'lite' : 'free';
+  }
   factory UserData.fromJson(Map<String, dynamic> json) {
     String categoryFromJoinedObject() {
       final v = json['Categories'] ?? json['Category'] ?? json['category'];
@@ -159,6 +187,13 @@ class UserData {
 
     // Your Businesses table uses `display_name` and `mobile_number`.
     // It also uses `subscriptionStatus` (string) and `status` (int).
+    final isSubscribed = _parseBool(
+      json['is_subscribed'] ?? json['isSubscribed'],
+      fallback: _parseSubscribedFromStatus(json['subscriptionStatus'] ?? json['subscription_status'], fallback: false),
+    );
+    final subscriptionTypeRaw = json['subscriptionType'] ?? json['subscription_type'];
+    final tier = _parseTierFromSubscriptionType(subscriptionTypeRaw, isSubscribed: isSubscribed);
+
     return UserData(
       id: (json['id'] ?? '').toString(),
       customerNumber: (json['customer_number'] ??
@@ -176,18 +211,16 @@ class UserData {
       regularCityState: (json['regularCityState'] ?? json['regular_city_state'] ?? json['cityState'] ?? json['city_state'] ?? '').toString().trim(),
       website: (json['website'] ?? json['website_url'] ?? json['web_site'] ?? json['business_website'] ?? json['businessWebsite'] ?? json['url'] ?? '').toString().trim(),
       categoryType: (json['category_type'] ?? json['categoryType'] ?? json['category_name'] ?? json['categoryName'] ?? categoryFromJoinedObject()).toString().trim(),
-      isSubscribed: _parseBool(
-        json['is_subscribed'] ?? json['isSubscribed'],
-        fallback: _parseSubscribedFromStatus(json['subscriptionStatus'] ?? json['subscription_status'], fallback: false),
-      ),
+      isSubscribed: isSubscribed,
       isActive: _parseBool(
         json['is_active'] ?? json['isActive'],
         fallback: _parseActiveFromStatus(json['status'] ?? json['account_status'], fallback: true),
       ),
       hasHustleProPlan: _parseBool(
         json['has_hustle_pro_plan'] ?? json['hasHustleProPlan'],
-        fallback: _parseHustleProFromSubscriptionType(json['subscriptionType'] ?? json['subscription_type'], fallback: false),
+        fallback: _parseHustleProFromSubscriptionType(subscriptionTypeRaw, fallback: false),
       ),
+      subscriptionTier: tier,
       createdAt: _parseDate(json['created_at'] ?? json['createdAt']),
       updatedAt: _parseDate(json['updated_at'] ?? json['updatedAt']),
     );
@@ -207,6 +240,7 @@ class UserData {
       'is_subscribed': isSubscribed,
       'is_active': isActive,
       'has_hustle_pro_plan': hasHustleProPlan,
+      'subscriptionTier': subscriptionTier,
       'created_at': createdAt.toUtc().toIso8601String(),
       'updated_at': updatedAt.toUtc().toIso8601String(),
     };

@@ -28,7 +28,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
   Map<int, int> _trailerCounts = const {};
   Map<int, int> _productCounts = const {};
 
-  int _subscriptionFilter = 0; // 0 all, 1 subscribed, 2 not
+  int _subscriptionFilter = 0; // 0 all, 1 free, 2 lite, 3 pro
   int _activeFilter = 0; // 0 all, 1 active, 2 inactive
   int _hustleProFilter = 0; // 0 all, 1 featured, 2 not
   int _sortMode = 0; // 0 default, 1 trailers desc
@@ -115,8 +115,9 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
   List<UserData> get _filtered {
     final q = _search.text.trim().toLowerCase();
     bool match(UserData u) {
-      if (_subscriptionFilter == 1 && !u.isSubscribed) return false;
-      if (_subscriptionFilter == 2 && u.isSubscribed) return false;
+      if (_subscriptionFilter == 1 && u.subscriptionTier != 'free') return false;
+      if (_subscriptionFilter == 2 && u.subscriptionTier != 'lite') return false;
+      if (_subscriptionFilter == 3 && u.subscriptionTier != 'pro') return false;
       if (_activeFilter == 1 && !u.isActive) return false;
       if (_activeFilter == 2 && u.isActive) return false;
       if (_hustleProFilter == 1 && !u.hasHustleProPlan) return false;
@@ -199,7 +200,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
   Future<void> _exportExcelCsv() async {
     final list = _applySort(_filtered);
     final rows = <List<String>>[
-      ['ID', 'Business ID', 'Name', 'Category Type', 'Email', 'Phone', 'Created on Date', 'Trailers', 'Subscribed', 'Active', 'Is Featured'],
+      ['ID', 'Business ID', 'Name', 'Category Type', 'Email', 'Phone', 'Created on Date', 'Trailers', 'Tier', 'Status', 'Is Featured'],
       ...list.map(
         (u) => [
           u.id,
@@ -210,7 +211,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
           u.phone,
           _formatCreatedOn(u.createdAt),
           '${_trailerCountForUser(u)}',
-          u.isSubscribed ? 'Yes' : 'No',
+          u.subscriptionTier[0].toUpperCase() + u.subscriptionTier.substring(1),
           u.isActive ? 'Active' : 'Inactive',
           u.hasHustleProPlan ? 'Yes' : 'No',
         ],
@@ -235,7 +236,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
             pw.Text('Businesses', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
             pw.SizedBox(height: 12),
             pw.Table.fromTextArray(
-              headers: const ['ID', 'Business ID', 'Name', 'Category', 'Email', 'Created on', 'Trailers', 'Subscribed', 'Status', 'Is Featured'],
+              headers: const ['ID', 'Business ID', 'Name', 'Category', 'Email', 'Created on', 'Trailers', 'Tier', 'Status', 'Is Featured'],
               data: list
                   .map(
                     (u) => [
@@ -246,7 +247,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
                       u.email,
                       _formatCreatedOn(u.createdAt),
                       '${_trailerCountForUser(u)}',
-                      u.isSubscribed ? 'Subscribed' : 'Not subscribed',
+                      u.subscriptionTier[0].toUpperCase() + u.subscriptionTier.substring(1),
                       u.isActive ? 'Active' : 'Inactive',
                       u.hasHustleProPlan ? 'Yes' : 'No',
                     ],
@@ -304,8 +305,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
     final email = TextEditingController(text: user.email);
     final phone = TextEditingController(text: user.phone);
     var isActive = user.isActive;
-    var isSubscribed = user.isSubscribed;
-    var hustlePro = user.hasHustleProPlan;
+    var selectedTier = user.subscriptionTier;
     var saving = false;
 
     await showModalBottomSheet<void>(
@@ -340,8 +340,9 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
                         email: email.text.trim(),
                         phone: phone.text.trim(),
                         isActive: isActive,
-                        isSubscribed: isSubscribed,
-                        hasHustleProPlan: hustlePro,
+                        isSubscribed: selectedTier != 'free',
+                        hasHustleProPlan: selectedTier == 'pro',
+                        subscriptionTier: selectedTier,
                         updatedAt: DateTime.now().toUtc(),
                       );
                       await UserService.updateUser(updated);
@@ -416,17 +417,22 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
                               title: const Text('Account active'),
                                subtitle: const Text('If off, the business is deactivated.'),
                             ),
-                            SwitchListTile.adaptive(
-                              value: isSubscribed,
-                              onChanged: saving ? null : (v) => setSheetState(() => isSubscribed = v),
-                              title: const Text('Subscribed'),
-                               subtitle: const Text('Mark whether the business has an active subscription.'),
-                            ),
-                            SwitchListTile.adaptive(
-                              value: hustlePro,
-                              onChanged: saving ? null : (v) => setSheetState(() => hustlePro = v),
-                              title: const Text('Hustle Pro plan enabled'),
-                              subtitle: const Text('Feature access flag (Hustle Pro Plan).'),
+                            ListTile(
+                              title: const Text('Subscription tier'),
+                              subtitle: const Text('Select the business subscription level.'),
+                              trailing: DropdownButton<String>(
+                                value: selectedTier,
+                                borderRadius: BorderRadius.circular(12),
+                                items: const [
+                                  DropdownMenuItem(value: 'free', child: Text('Free')),
+                                  DropdownMenuItem(value: 'lite', child: Text('Lite')),
+                                  DropdownMenuItem(value: 'pro', child: Text('Pro')),
+                                ],
+                                onChanged: saving ? null : (v) {
+                                  if (v == null) return;
+                                  setSheetState(() => selectedTier = v);
+                                },
+                              ),
                             ),
                           ],
                         ),
@@ -587,8 +593,12 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
         DataCell(
           _pill(
             context: context,
-            text: u.isSubscribed ? 'Subscribed' : 'Not subscribed',
-            color: u.isSubscribed ? theme.colors.primary : theme.colors.mutedForeground,
+            text: u.subscriptionTier[0].toUpperCase() + u.subscriptionTier.substring(1),
+            color: u.subscriptionTier == 'pro'
+                ? Colors.deepPurple
+                : u.subscriptionTier == 'lite'
+                    ? theme.colors.primary
+                    : theme.colors.mutedForeground,
           ),
         ),
         DataCell(
@@ -686,9 +696,10 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
                 SegmentedButton<int>(
                   showSelectedIcon: false,
                   segments: const [
-                    ButtonSegment(value: 0, label: Text('All subs')),
-                    ButtonSegment(value: 1, label: Text('Subscribed')),
-                    ButtonSegment(value: 2, label: Text('Not')),
+                    ButtonSegment(value: 0, label: Text('All tiers')),
+                    ButtonSegment(value: 1, label: Text('Free')),
+                    ButtonSegment(value: 2, label: Text('Lite')),
+                    ButtonSegment(value: 3, label: Text('Pro')),
                   ],
                   selected: {_subscriptionFilter},
                   onSelectionChanged: _loading
@@ -836,7 +847,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
                               DataColumn(label: Text('Created on Date')),
                               DataColumn(label: Text('Trailers')),
   DataColumn(label: Text('Products')),
-                              DataColumn(label: Text('Subscription')),
+                              DataColumn(label: Text('Tier')),
                               DataColumn(label: Text('Status')),
                               DataColumn(label: Text('Is Featured?')),
                               DataColumn(label: Text('Actions')),

@@ -292,6 +292,23 @@ class _GiveawaysContentState extends State<_GiveawaysContent> {
     );
   }
 
+  Future<void> _duplicateGiveaway(Giveaway g) async {
+    try {
+      final created = await GiveawayService.duplicateGiveaway(source: g);
+      if (!mounted) return;
+      _setTab(0); // Switch to Draft tab
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Duplicated as draft: ${created.title}')),
+      );
+    } catch (e) {
+      debugPrint('Duplicate giveaway failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to duplicate giveaway: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final list = switch (_tabIndex) {
@@ -344,6 +361,7 @@ class _GiveawaysContentState extends State<_GiveawaysContent> {
             onTabChanged: _setTab,
              onViewGiveaway: _openGiveawaySheet,
              onViewParticipants: _openParticipantsSheet,
+             onDuplicate: _duplicateGiveaway,
           ),
       ],
     );
@@ -356,6 +374,7 @@ class _GiveawaysTable extends StatelessWidget {
   final ValueChanged<int> onTabChanged;
   final ValueChanged<Giveaway> onViewGiveaway;
   final ValueChanged<Giveaway> onViewParticipants;
+  final Future<void> Function(Giveaway) onDuplicate;
 
   const _GiveawaysTable({
     required this.list,
@@ -363,6 +382,7 @@ class _GiveawaysTable extends StatelessWidget {
     required this.onTabChanged,
     required this.onViewGiveaway,
     required this.onViewParticipants,
+    required this.onDuplicate,
   });
 
   String _formatDate(DateTime dt) {
@@ -444,6 +464,11 @@ class _GiveawaysTable extends StatelessWidget {
                   onPressed: () => onViewGiveaway(g),
                   icon: Icon(Icons.card_giftcard, size: 18, color: Theme.of(context).colorScheme.onPrimary),
                   label: Text('View giveaway', style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => onDuplicate(g),
+                  icon: Icon(Icons.copy_outlined, size: 18, color: context.foreground),
+                  label: Text('Duplicate', style: TextStyle(color: context.foreground)),
                 ),
               ],
             ),

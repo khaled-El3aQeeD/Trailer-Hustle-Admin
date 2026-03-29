@@ -772,6 +772,23 @@ class GiveawayService {
     }
   }
 
+  /// Duplicate an existing giveaway as a new draft.
+  ///
+  /// Copies title, description, image, terms, sponsor, and how-to-participate.
+  /// Resets the winner announcement date to +30 days from now.
+  static Future<Giveaway> duplicateGiveaway({required Giveaway source}) async {
+    return createGiveaway(
+      title: '${source.title} (Copy)',
+      description: source.description,
+      image: source.rawImage,
+      termsAndConditions: source.termsAndConditions,
+      sponsorId: source.sponsorId,
+      howToParticipate: source.howToParticipate,
+      winnerAnnouncementDate: DateTime.now().add(const Duration(days: 30)),
+      isDraft: true,
+    );
+  }
+
   /// Delete a giveaway and its related declarewinners entry.
   static Future<void> deleteGiveaway({required String giveawayId}) async {
     try {
