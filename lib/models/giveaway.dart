@@ -119,11 +119,13 @@ class Giveaway {
 
   /// Map your existing Supabase `Giveaways` row (camelCase keys) into the app model.
   ///
-  /// Current Supabase schema (as generated in `database.types.ts`) does not store
-  /// `archivedAt`/`winnerUserId`/`isDraft` the same way the UI originally expected,
-  /// so we derive reasonable UI semantics:
-  /// - `scheduledArchiveAt` <- `winnerAnnouncementDate`
-  /// - `archivedAt` derived from `isDeclared` or if announcement date is in the past
+  /// Current Supabase schema stores `isArchived` (0 or 1) separately from
+  /// `isDeclared`. A giveaway is considered archived if:
+  ///   - `isArchived` == 1 (date expired, set by server cron), OR
+  ///   - `isDeclared` == 1 (winner picked), OR
+  ///   - `winnerAnnouncementDate` is in the past (client-side safety)
+  ///
+  /// `scheduledArchiveAt` <- `winnerAnnouncementDate`
   static Giveaway fromSupabaseRow({
     required Map<String, dynamic> row,
     required List<GiveawayParticipant> participants,
@@ -134,6 +136,7 @@ class Giveaway {
     final updatedAt = DateTime.parse(row['updatedAt'].toString()).toLocal();
     final announcement = DateTime.parse(row['winnerAnnouncementDate'].toString()).toLocal();
     final isDeclared = (row['isDeclared'] ?? 0).toString() == '1';
+    final isArchivedFlag = (row['isArchived'] ?? 0).toString() == '1';
     final isPast = t.isAfter(announcement) || t.isAtSameMomentAs(announcement);
 
     final winnerUserId = (row['winnerUserId'] ?? row['winner_user_id'])?.toString();
@@ -152,7 +155,7 @@ class Giveaway {
       scheduledArchiveAt: announcement,
       createdAt: createdAt,
       updatedAt: updatedAt,
-      archivedAt: (isDeclared || isPast) ? announcement : null,
+      archivedAt: (isDeclared || isArchivedFlag || isPast) ? announcement : null,
       winnerUserId: (winnerUserId == null || winnerUserId.trim().isEmpty) ? null : winnerUserId,
       participants: participants,
     );

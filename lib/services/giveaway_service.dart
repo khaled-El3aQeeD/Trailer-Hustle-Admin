@@ -602,10 +602,34 @@ class GiveawayService {
     return g;
   }
 
-  /// Kept for UI compatibility. With the current Supabase schema, we infer
-  /// archived status from `isDeclared` and `winnerAnnouncementDate`, so there is
-  /// no separate archive job.
-  static void archiveDueGiveaways({DateTime? now}) {}
+  /// Archive giveaways whose winnerAnnouncementDate has passed.
+  /// This mirrors the server-side pg_cron job for immediate admin-side consistency.
+  static Future<void> archiveDueGiveaways({DateTime? now}) async {
+    try {
+      final t = now ?? DateTime.now();
+      final dueIds = giveaways.value
+          .where((g) =>
+              !g.isArchived &&
+              g.winnerUserId == null &&
+              (t.isAfter(g.scheduledArchiveAt) || t.isAtSameMomentAs(g.scheduledArchiveAt)))
+          .map((g) => int.tryParse(g.id))
+          .where((id) => id != null)
+          .toList();
+      if (dueIds.isEmpty) return;
+
+      await SupabaseConfig.client
+          .from(_giveawaysTable)
+          .update({
+            'isArchived': 1,
+            'updatedAt': DateTime.now().toUtc().toIso8601String(),
+          })
+          .inFilter('id', dueIds);
+
+      await refresh();
+    } catch (e) {
+      debugPrint('GiveawayService.archiveDueGiveaways failed: $e');
+    }
+  }
 
   static Future<void> updateSchedule({required String giveawayId, required DateTime scheduledArchiveAt}) async {
     try {
@@ -702,6 +726,7 @@ class GiveawayService {
           _giveawaysTable,
           {
             'isDeclared': 1,
+            'isArchived': 1,
             'winnerUserId': winnerUserId,
             'updatedAt': now,
           },
@@ -713,6 +738,7 @@ class GiveawayService {
           _giveawaysTable,
           {
             'isDeclared': 1,
+            'isArchived': 1,
             'winner_user_id': winnerUserId,
             'updatedAt': now,
           },

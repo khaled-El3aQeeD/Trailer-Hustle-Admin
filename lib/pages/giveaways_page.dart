@@ -33,7 +33,10 @@ class _GiveawaysPageState extends State<GiveawaysPage> with TickerProviderStateM
   void initState() {
     super.initState();
     // Load from Supabase (schema is the source of truth).
-    GiveawayService.refresh();
+    GiveawayService.refresh().then((_) {
+      // After loading, archive any due giveaways server-side for consistency.
+      GiveawayService.archiveDueGiveaways();
+    });
     _sidebarAnimationController = AnimationController(
       duration: DashboardConstants.sidebarAnimationDuration,
       vsync: this,
@@ -667,6 +670,7 @@ class _GiveawayViewAndEditSheetState extends State<_GiveawayViewAndEditSheet> {
     final g = widget.giveaway;
     final isArchived = g.isDueForArchive(DateTime.now());
     final isDraft = g.isDraft;
+    final hasWinner = g.winnerUserId != null && g.winnerUserId!.trim().isNotEmpty;
     final winnerOptions = g.participants
         .map((p) => DropdownMenuEntry<String>(value: p.userId, label: '${p.companyName} (${p.userId})'))
         .toList(growable: false);
@@ -844,17 +848,17 @@ class _GiveawayViewAndEditSheetState extends State<_GiveawayViewAndEditSheet> {
                 SizedBox(
                   width: 340,
                   child: DropdownMenu<String>(
-                    enabled: !isArchived && !isDraft && g.participants.isNotEmpty,
+                    enabled: !hasWinner && !isDraft && g.participants.isNotEmpty,
                     initialSelection: _winnerUserId,
                     expandedInsets: EdgeInsets.zero,
-                    label: const Text('Declare winner'),
+                    label: Text(hasWinner ? 'Winner declared' : 'Declare winner'),
                     dropdownMenuEntries: winnerOptions,
                     onSelected: (v) => setState(() => _winnerUserId = v),
                   ),
                 ),
                 const SizedBox(width: 12),
                 FilledButton(
-                  onPressed: isArchived || isDraft || _winnerUserId == null || _saving ? null : _declareWinner,
+                  onPressed: hasWinner || isDraft || _winnerUserId == null || _saving ? null : _declareWinner,
                   child: _saving
                       ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.onPrimary))
                       : Text('Declare', style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
