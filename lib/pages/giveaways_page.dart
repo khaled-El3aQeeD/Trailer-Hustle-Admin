@@ -13,6 +13,8 @@ import 'package:trailerhustle_admin/widgets/giveaway_image_uploader.dart';
 import 'package:trailerhustle_admin/widgets/sponsor_info_card.dart';
 import 'package:trailerhustle_admin/widgets/sponsor_picker_dialog.dart';
 import 'package:trailerhustle_admin/widgets/sidebar.dart';
+import 'package:trailerhustle_admin/widgets/adaptive_sidebar.dart';
+import 'package:trailerhustle_admin/services/sidebar_controller.dart';
 import 'package:trailerhustle_admin/services/sponsor_service.dart';
 import 'package:trailerhustle_admin/models/sponsor_data.dart';
 import 'dart:async';
@@ -24,10 +26,7 @@ class GiveawaysPage extends StatefulWidget {
   State<GiveawaysPage> createState() => _GiveawaysPageState();
 }
 
-class _GiveawaysPageState extends State<GiveawaysPage> with TickerProviderStateMixin {
-  bool _isSidebarCollapsed = false;
-  late AnimationController _sidebarAnimationController;
-  late Animation<double> _sidebarAnimation;
+class _GiveawaysPageState extends State<GiveawaysPage> {
 
   @override
   void initState() {
@@ -37,35 +36,14 @@ class _GiveawaysPageState extends State<GiveawaysPage> with TickerProviderStateM
       // After loading, archive any due giveaways server-side for consistency.
       GiveawayService.archiveDueGiveaways();
     });
-    _sidebarAnimationController = AnimationController(
-      duration: DashboardConstants.sidebarAnimationDuration,
-      vsync: this,
-    );
-    _sidebarAnimation = CurvedAnimation(
-      parent: _sidebarAnimationController,
-      curve: Curves.easeInOut,
-    );
-    _sidebarAnimationController.forward();
-  }
-
-  @override
-  void dispose() {
-    _sidebarAnimationController.dispose();
-    super.dispose();
-  }
-
-  void _toggleSidebar() {
-    setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
-    if (_isSidebarCollapsed) {
-      _sidebarAnimationController.reverse();
-    } else {
-      _sidebarAnimationController.forward();
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     final isMobile = context.theme.breakpoints.md > MediaQuery.of(context).size.width;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final sidebarController = context.read<SidebarController>();
+    sidebarController.autoCollapseIfNeeded(screenWidth);
 
     return Scaffold(
       backgroundColor: context.theme.colors.primaryForeground,
@@ -77,20 +55,7 @@ class _GiveawaysPageState extends State<GiveawaysPage> with TickerProviderStateM
           : null,
       body: Row(
         children: [
-          if (!isMobile)
-            AnimatedBuilder(
-              animation: _sidebarAnimation,
-              builder: (context, child) {
-                return ClipRect(
-                  child: SizeTransition(
-                    sizeFactor: _sidebarAnimation,
-                    axis: Axis.horizontal,
-                    axisAlignment: -1,
-                    child: const Sidebar(),
-                  ),
-                );
-              },
-            ),
+          if (!isMobile) const AdaptiveSidebar(),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -117,8 +82,7 @@ class _GiveawaysPageState extends State<GiveawaysPage> with TickerProviderStateM
                           children: [
                             DashboardHeader(
                               pageTitle: 'Giveaways',
-                              onSidebarToggle: isMobile ? null : _toggleSidebar,
-                              sidebarAnimation: isMobile ? null : _sidebarAnimation,
+                              onSidebarToggle: isMobile ? null : () => context.read<SidebarController>().toggle(),
                               onThemeToggle: () => context.read<ThemeProvider>().toggleThemeMode(),
                               themeMode: context.watch<ThemeProvider>().themeMode,
                             ),
@@ -541,22 +505,26 @@ class _GiveawaysTable extends StatelessWidget {
                       headingRowHeight: 46,
                     ),
                   ),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 1180),
-                      child: DataTable(
-                        showCheckboxColumn: false,
-                        columns: const [
-                          DataColumn(label: Text('Title')),
-                          DataColumn(label: Text('Status')),
-                          DataColumn(numeric: true, label: Text('Entrants')),
-                          DataColumn(label: Text('Winner')),
-                          DataColumn(label: Text('Archive')),
-                          DataColumn(label: Text('Giveaway ID')),
-                          DataColumn(label: Text('Actions')),
-                        ],
-                        rows: list.map((g) => _rowFor(context, g)).toList(growable: false),
+                  child: Scrollbar(
+                    thumbVisibility: true,
+                    scrollbarOrientation: ScrollbarOrientation.bottom,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 900),
+                        child: DataTable(
+                          showCheckboxColumn: false,
+                          columns: const [
+                            DataColumn(label: Text('Title')),
+                            DataColumn(label: Text('Status')),
+                            DataColumn(numeric: true, label: Text('Entrants')),
+                            DataColumn(label: Text('Winner')),
+                            DataColumn(label: Text('Archive')),
+                            DataColumn(label: Text('Giveaway ID')),
+                            DataColumn(label: Text('Actions')),
+                          ],
+                          rows: list.map((g) => _rowFor(context, g)).toList(growable: false),
+                        ),
                       ),
                     ),
                   ),

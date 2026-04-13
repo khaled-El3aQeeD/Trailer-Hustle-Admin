@@ -42,6 +42,8 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
 
   int? _selectedTrailerTypeId;
   int? _selectedBrandId;
+  /// null = All, true = Active only, false = Removed only.
+  bool? _selectedStatus;
 
   int _page = 0;
   int _pageSize = 10;
@@ -68,7 +70,9 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
       _error = null;
     });
     try {
-      final trailers = await TrailerService.fetchAllTrailers();
+      final trailers = widget.mode == TrailersTableMode.all
+          ? await TrailerService.fetchAllTrailersIncludingDeleted()
+          : await TrailerService.fetchAllTrailers();
 
       // We also treat trailers whose Brand is not published as needing admin
       // approval (submitted/pending).
@@ -278,6 +282,11 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
   List<TrailerData> get _filtered {
     final q = _search.text.trim().toLowerCase();
     bool match(TrailerData t) {
+      if (_selectedStatus != null) {
+        final isActive = !t.isDeleted;
+        if (_selectedStatus! && !isActive) return false;
+        if (!_selectedStatus! && isActive) return false;
+      }
       if ((_selectedBrandId ?? 0) > 0 && t.brand != _selectedBrandId) return false;
       if ((_selectedTrailerTypeId ?? 0) > 0 && (t.trailerType ?? 0) != _selectedTrailerTypeId) return false;
       if (q.isEmpty) return true;
@@ -296,6 +305,7 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
     setState(() {
       _selectedBrandId = null;
       _selectedTrailerTypeId = null;
+      _selectedStatus = null;
       _page = 0;
     });
   }
@@ -337,6 +347,8 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
     final pageItems = _pageSlice(filtered);
 
     final total = _all.length;
+    final activeCount = _all.where((t) => !t.isDeleted).length;
+    final removedCount = _all.where((t) => t.isDeleted).length;
     final withImages = _all.where((t) => _imageFor(t).trim().isNotEmpty).length;
     final uniqueBusinesses = _all.map((t) => t.businessId).where((id) => id > 0).toSet().length;
 
@@ -420,13 +432,36 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
                             },
                     ),
                   ),
-                  if ((_selectedBrandId ?? 0) > 0 || (_selectedTrailerTypeId ?? 0) > 0)
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 160, maxWidth: 200),
+                    child: DropdownButtonFormField<bool?>(
+                      value: _selectedStatus,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: 'Status'),
+                      items: const [
+                        DropdownMenuItem<bool?>(value: null, child: Text('All statuses')),
+                        DropdownMenuItem<bool?>(value: true, child: Text('Active')),
+                        DropdownMenuItem<bool?>(value: false, child: Text('Removed')),
+                      ],
+                      onChanged: _loading
+                          ? null
+                          : (v) {
+                              setState(() {
+                                _selectedStatus = v;
+                                _page = 0;
+                              });
+                            },
+                    ),
+                  ),
+                  if ((_selectedBrandId ?? 0) > 0 || (_selectedTrailerTypeId ?? 0) > 0 || _selectedStatus != null)
                     TextButton.icon(
                       onPressed: _loading ? null : _clearFilters,
                       icon: const Icon(Icons.clear_outlined, size: 18),
                       label: const Text('Clear'),
                     ),
                   _StatPill(label: 'Total', value: '$total', icon: Icons.inventory_2_outlined),
+                  _StatPill(label: 'Active', value: '$activeCount', icon: Icons.check_circle_outline),
+                  _StatPill(label: 'Removed', value: '$removedCount', icon: Icons.remove_circle_outline),
                   _StatPill(label: 'With images', value: '$withImages', icon: Icons.image_outlined),
                   _StatPill(label: 'Businesses', value: '$uniqueBusinesses', icon: Icons.store_outlined),
                 ],
@@ -438,6 +473,8 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   _StatPill(label: 'Total', value: '$total', icon: Icons.inventory_2_outlined),
+                  _StatPill(label: 'Active', value: '$activeCount', icon: Icons.check_circle_outline),
+                  _StatPill(label: 'Removed', value: '$removedCount', icon: Icons.remove_circle_outline),
                   _StatPill(label: 'With images', value: '$withImages', icon: Icons.image_outlined),
                   _StatPill(label: 'Businesses', value: '$uniqueBusinesses', icon: Icons.store_outlined),
                 ],
@@ -473,26 +510,29 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
                           headingRowHeight: 46,
                         ),
                       ),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(minWidth: widget.mode == TrailersTableMode.submittedForApproval ? 1380 : 1230),
-                          child: DataTable(
-                            showCheckboxColumn: false,
-                            columns: [
-                              const DataColumn(label: Text('ID')),
-                              const DataColumn(label: Text('Trailer')),
-                              const DataColumn(label: Text('Business')),
-                              const DataColumn(label: Text('Make')),
-                              if (widget.mode == TrailersTableMode.submittedForApproval) const DataColumn(label: Text('Date submitted')),
-                              const DataColumn(label: Text('Category')),
-                              const DataColumn(label: Text('Model')),
-                              const DataColumn(label: Text('Ratings')),
-                              const DataColumn(label: Text('Actions')),
-                            ],
-                            rows: pageItems.map((t) => _rowFor(context, t)).toList(growable: false),
-                          ),
-                        ),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final visible = _visibleColumns(constraints.maxWidth);
+                          final minW = visible.length >= 10 ? 1100.0 : visible.length >= 8 ? 900.0 : visible.length >= 6 ? 700.0 : 500.0;
+                          return Scrollbar(
+                            thumbVisibility: true,
+                            scrollbarOrientation: ScrollbarOrientation.bottom,
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(minWidth: minW),
+                                child: DataTable(
+                                  showCheckboxColumn: false,
+                                  columns: [
+                                    for (int i = 0; i < _columnLabels.length; i++)
+                                      if (visible.contains(i)) DataColumn(label: Text(_columnLabels[i])),
+                                  ],
+                                  rows: pageItems.map((t) => _rowFor(context, t, visible)).toList(growable: false),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ),
@@ -517,7 +557,22 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
     );
   }
 
-  DataRow _rowFor(BuildContext context, TrailerData t) {
+  // Column indices: 0=ID, 1=Trailer, 2=Business, 3=Make, 4=Date submitted, 5=Category, 6=Model, 7=Status, 8=Ratings, 9=Actions
+  static const _columnLabels = ['ID', 'Trailer', 'Business', 'Make', 'Date submitted', 'Category', 'Model', 'Status', 'Ratings', 'Actions'];
+
+  /// Returns column indices to display based on available width and mode.
+  Set<int> _visibleColumns(double width) {
+    final base = <int>{0, 1, 2, 3, 5, 6, 7, 8, 9};
+    if (widget.mode == TrailersTableMode.submittedForApproval) base.add(4);
+    if (width < 800) {
+      base.removeAll({0, 3, 5, 6, 8}); // keep Trailer, Business, Status, Actions (+ Date if approval)
+    } else if (width < 1000) {
+      base.removeAll({3, 6}); // hide Make, Model
+    }
+    return base;
+  }
+
+  DataRow _rowFor(BuildContext context, TrailerData t, Set<int> visible) {
     final theme = context.theme;
     TextStyle? cellStyle({bool muted = false}) => Theme.of(context)
         .textTheme
@@ -529,13 +584,9 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
     final needsApproval = widget.mode == TrailersTableMode.submittedForApproval && (missingType || brandUnpublished);
     final approving = _approvingTrailerIds.contains(t.id);
 
-    return DataRow(
-      onSelectChanged: (_) async {
-        final saved = await TrailerAdminDialog.show(context, trailer: t);
-        if (saved) _refresh();
-      },
-      cells: [
-        DataCell(Text('#${t.id}', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: theme.colors.mutedForeground))),
+    final allCells = [
+      // 0: ID
+      DataCell(Text('#${t.id}', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: theme.colors.mutedForeground))),
         DataCell(
           Row(
             children: [
@@ -561,14 +612,16 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
             child: Text(_businessNameFor(t), style: cellStyle(muted: true), maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
         ),
+        // 3: Make
         DataCell(Text(_makeText(t), style: cellStyle(muted: true))),
-        if (widget.mode == TrailersTableMode.submittedForApproval)
-          DataCell(
-            ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 160, maxWidth: 200),
-              child: Text(_submittedDateText(context, t), style: cellStyle(muted: true), maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
+        // 4: Date submitted (always built; visibility controlled by _visibleColumns)
+        DataCell(
+          ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 160, maxWidth: 200),
+            child: Text(_submittedDateText(context, t), style: cellStyle(muted: true), maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
+        ),
+        // 5: Category
         DataCell(
           ConstrainedBox(
             constraints: const BoxConstraints(minWidth: 180, maxWidth: 260),
@@ -581,6 +634,7 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
             child: Text(_modelText(t), style: cellStyle(muted: true), maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
         ),
+        DataCell(_TrailerStatusPill(isDeleted: t.isDeleted)),
         DataCell(_TrailerRatingSummaryPill(summary: _ratingSummaryByTrailerId[t.id])),
         DataCell(
           Wrap(
@@ -620,7 +674,14 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
             ],
           ),
         ),
-      ],
+      ];
+
+    return DataRow(
+      onSelectChanged: (_) async {
+        final saved = await TrailerAdminDialog.show(context, trailer: t);
+        if (saved) _refresh();
+      },
+      cells: [for (int i = 0; i < allCells.length; i++) if (visible.contains(i)) allCells[i]],
     );
   }
 }
@@ -694,6 +755,35 @@ class _TrailerRatingSummaryPill extends StatelessWidget {
           const SizedBox(width: 8),
           Text('Avg: ', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: theme.colors.mutedForeground)),
           Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: theme.colors.foreground, fontWeight: FontWeight.w800)),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrailerStatusPill extends StatelessWidget {
+  const _TrailerStatusPill({required this.isDeleted});
+  final bool isDeleted;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final color = isDeleted ? theme.colors.destructive : const Color(0xFF22C55E);
+    final label = isDeleted ? 'Removed' : 'Active';
+    final icon = isDeleted ? Icons.remove_circle : Icons.check_circle;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: color, fontWeight: FontWeight.w900)),
         ],
       ),
     );

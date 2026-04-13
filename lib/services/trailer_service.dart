@@ -96,6 +96,26 @@ class TrailerService {
     }
   }
 
+  /// Fetch all trailers including soft-deleted ones.
+  ///
+  /// Used by admin views that need to display removed trailers with a status label.
+  static Future<List<TrailerData>> fetchAllTrailersIncludingDeleted({int limit = 500}) async {
+    try {
+      final rows = await SupabaseService.from(trailersTable)
+          .select('*')
+          .order('updatedAt', ascending: false)
+          .limit(limit);
+
+      return (rows as List)
+          .map((r) => TrailerData.fromJson((r as Map).cast<String, dynamic>()))
+          .where((t) => t.id != 0)
+          .toList(growable: false);
+    } catch (e) {
+      debugPrint('TrailerService.fetchAllTrailersIncludingDeleted failed: $e');
+      rethrow;
+    }
+  }
+
   /// Fetch the newest (latest updated) image path/url for each trailer.
   ///
   /// Returns a map keyed by `trailerId`.

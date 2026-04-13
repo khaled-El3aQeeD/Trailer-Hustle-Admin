@@ -17,6 +17,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   forui: ^0.14.1      # Design system and UI components
   provider: ^6.1.5    # State management
+  shared_preferences: ^2.3.0  # Persist sidebar state
   fl_chart: 0.68.0
 
 dev_dependencies:

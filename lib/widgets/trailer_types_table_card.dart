@@ -278,20 +278,24 @@ class _TrailerTypesTableCardState extends State<TrailerTypesTableCard> {
                       headingRowHeight: 46,
                     ),
                   ),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 900),
-                      child: DataTable(
-                        showCheckboxColumn: false,
-                        columns: const [
-                          DataColumn(label: Text('ID')),
-                          DataColumn(label: Text('Title')),
-                          DataColumn(label: Text('Published')),
-                          DataColumn(label: Text('Updated')),
-                          DataColumn(label: Text('Actions')),
-                        ],
-                        rows: filtered.map((t) => _rowFor(context, t)).toList(growable: false),
+                  child: Scrollbar(
+                    thumbVisibility: true,
+                    scrollbarOrientation: ScrollbarOrientation.bottom,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 700),
+                        child: DataTable(
+                          showCheckboxColumn: false,
+                          columns: const [
+                            DataColumn(label: Text('ID')),
+                            DataColumn(label: Text('Title')),
+                            DataColumn(label: Text('Published')),
+                            DataColumn(label: Text('Updated')),
+                            DataColumn(label: Text('Actions')),
+                          ],
+                          rows: filtered.map((t) => _rowFor(context, t)).toList(growable: false),
+                        ),
                       ),
                     ),
                   ),

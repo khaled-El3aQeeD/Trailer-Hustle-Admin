@@ -7,7 +7,10 @@ import 'pages/dashboard_page.dart';
 import 'package:trailerhustle_admin/pages/giveaways_page.dart';
 import 'package:trailerhustle_admin/pages/trailers_page.dart';
 import 'package:trailerhustle_admin/pages/notifications_page.dart';
+import 'package:trailerhustle_admin/pages/send_push_page.dart';
+import 'package:trailerhustle_admin/pages/user_profile_page.dart';
 import 'package:trailerhustle_admin/services/app_navigation_controller.dart';
+import 'package:trailerhustle_admin/services/sidebar_controller.dart';
 import 'package:flutter/foundation.dart';
 import 'package:trailerhustle_admin/auth/auth_controller.dart';
 import 'package:trailerhustle_admin/pages/auth_page.dart';
@@ -46,6 +49,7 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => AppNavigationController()),
         ChangeNotifierProvider(create: (_) => AuthController()),
+        ChangeNotifierProvider(create: (_) => SidebarController()),
       ],
       child: const Application(),
     ),
@@ -146,6 +150,21 @@ class _AdminRoot extends StatelessWidget {
         AppRoute.trailerTypesEdit => const TrailersPage(key: ValueKey('trailer_types_edit'), initialTabIndex: 0),
         AppRoute.manufacturersEdit => const TrailersPage(key: ValueKey('manufacturers_edit'), initialTabIndex: 1),
         AppRoute.notifications => const NotificationsPage(key: ValueKey('notifications')),
+        AppRoute.sendPush => const SendPushPage(key: ValueKey('send_push')),
+        AppRoute.customerProfile => () {
+          final nav = context.read<AppNavigationController>();
+          final user = nav.profileUser;
+          if (user == null) {
+            // Safety: if no user data, go back to dashboard.
+            WidgetsBinding.instance.addPostFrameCallback((_) => nav.go(AppRoute.dashboard));
+            return const DashboardPage(key: ValueKey('dashboard_fallback'));
+          }
+          return UserProfilePage(
+            key: ValueKey('profile_${user.id}'),
+            user: user,
+            initialTabIndex: nav.profileTabIndex,
+          );
+        }(),
       },
     );
   }

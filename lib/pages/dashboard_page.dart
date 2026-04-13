@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 import 'package:provider/provider.dart';
 import 'package:trailerhustle_admin/core/constants.dart';
+import 'package:trailerhustle_admin/services/sidebar_controller.dart';
 import 'package:trailerhustle_admin/theme/theme_provider.dart';
 import 'package:trailerhustle_admin/widgets/customers_table_card.dart';
 import 'package:trailerhustle_admin/widgets/dashboard_header.dart';
+import 'package:trailerhustle_admin/widgets/adaptive_sidebar.dart';
 import 'package:trailerhustle_admin/widgets/sidebar.dart';
 import 'package:trailerhustle_admin/widgets/trailers_table_card.dart';
 
@@ -44,76 +46,28 @@ class DashboardPage extends StatefulWidget {
   State<DashboardPage> createState() => _DashboardPageState();
 }
 
-class _DashboardPageState extends State<DashboardPage>
-    with TickerProviderStateMixin {
-  bool _isSidebarCollapsed = false;
-  late AnimationController _sidebarAnimationController;
-  late Animation<double> _sidebarAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _sidebarAnimationController = AnimationController(
-      duration: DashboardConstants.sidebarAnimationDuration,
-      vsync: this,
-    );
-    _sidebarAnimation = CurvedAnimation(
-      parent: _sidebarAnimationController,
-      curve: Curves.easeInOut,
-    );
-
-    // Start with sidebar open
-    _sidebarAnimationController.forward();
-  }
-
-  @override
-  void dispose() {
-    _sidebarAnimationController.dispose();
-    super.dispose();
-  }
-
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-    });
-
-    if (_isSidebarCollapsed) {
-      _sidebarAnimationController.reverse();
-    } else {
-      _sidebarAnimationController.forward();
-    }
-  }
+class _DashboardPageState extends State<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
     final isMobile =
         context.theme.breakpoints.md > MediaQuery.of(context).size.width;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final sidebarController = context.read<SidebarController>();
+    sidebarController.autoCollapseIfNeeded(screenWidth);
 
     return Scaffold(
       backgroundColor: context.theme.colors.primaryForeground,
       drawer: isMobile
           ? Container(
               color: context.theme.colors.background,
-              child: Sidebar(),
+              child: const Sidebar(),
             )
           : null,
       body: Row(
         children: [
           // Desktop sidebar (hidden on mobile)
-          if (!isMobile)
-            AnimatedBuilder(
-              animation: _sidebarAnimation,
-              builder: (context, child) {
-                return ClipRect(
-                  child: SizeTransition(
-                    sizeFactor: _sidebarAnimation,
-                    axis: Axis.horizontal,
-                    axisAlignment: -1,
-                    child: const Sidebar(),
-                  ),
-                );
-              },
-            ),
+          if (!isMobile) const AdaptiveSidebar(),
 
           // Main content area
           Expanded(
@@ -149,10 +103,7 @@ class _DashboardPageState extends State<DashboardPage>
                             // Header inside the container
                             DashboardHeader(
                               pageTitle: 'TrailerHustle',
-                              onSidebarToggle: isMobile ? null : _toggleSidebar,
-                              sidebarAnimation: isMobile
-                                  ? null
-                                  : _sidebarAnimation,
+                              onSidebarToggle: isMobile ? null : () => context.read<SidebarController>().toggle(),
                               onThemeToggle: () => context
                                   .read<ThemeProvider>()
                                   .toggleThemeMode(),

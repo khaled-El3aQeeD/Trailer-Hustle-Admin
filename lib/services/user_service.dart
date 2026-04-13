@@ -180,22 +180,38 @@ class UserService {
       await SupabaseService.update(
         table,
         {
-          // Match your Businesses schema as closely as possible.
           'display_name': userData.name,
           'email': userData.email,
           'mobile_number': userData.phone,
-          // Public website URL.
-          // User confirmed the column name is exactly `website`.
           'website': userData.website,
-          // Images in your schema: `image` + `profile_image`.
           'profile_image': userData.avatar,
-          // Admin flags.
-          // `status` is an int in your schema: treat 1 as active.
           'status': userData.isActive ? 1 : 0,
-          // `subscriptionStatus` is a string in your schema.
           'subscriptionStatus': userData.subscriptionTier == 'free' ? 'inactive' : 'active',
-          // `subscriptionType` is smallint; 0=free, 1=lite, 2=pro.
           'subscriptionType': userData.subscriptionTier == 'pro' ? 2 : (userData.subscriptionTier == 'lite' ? 1 : 0),
+          // Extended profile fields
+          'contact_email': userData.contactEmail,
+          'description': userData.description,
+          'location': userData.location,
+          'latitude': userData.latitude,
+          'longitude': userData.longitude,
+          'instagram': userData.instagram,
+          'facebook': userData.facebook,
+          'youtube': userData.youtube,
+          'twitter': userData.twitter,
+          'tiktok': userData.tiktok,
+          'image': userData.coverImage,
+          'is_featured': userData.isFeatured ? 1 : 0,
+          'is_verify': userData.isVerify ? 1 : 0,
+          'color': userData.color,
+          'business_contact_number': userData.businessContactNumber,
+          'business_country_code': userData.businessCountryCode,
+          'country_code': userData.countryCode,
+          'zip_code': userData.zipCode,
+          'regularCityState': userData.regularCityState,
+          'complete_profile': userData.completeProfile,
+          if (userData.categoryId != null) 'category_id': userData.categoryId,
+          if (userData.subscriptionEndDate != null)
+            'subscriptionEndDate': userData.subscriptionEndDate!.toUtc().toIso8601String(),
           'updatedAt': DateTime.now().toUtc().toIso8601String(),
         },
         filters: {'id': userData.id},
@@ -203,6 +219,137 @@ class UserService {
     } catch (e) {
       debugPrint('UserService.updateUser failed: $e');
       rethrow;
+    }
+  }
+
+  /// Fetch gallery images for a business from the businesssimages table.
+  static Future<List<Map<String, dynamic>>> fetchBusinessImages(String businessId) async {
+    try {
+      final rows = await SupabaseConfig.client
+          .from('businesssimages')
+          .select('*')
+          .eq('businessId', businessId)
+          .isFilter('deletedAt', null)
+          .order('createdAt', ascending: true);
+      return (rows as List).whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
+    } catch (e) {
+      debugPrint('UserService.fetchBusinessImages failed: $e');
+      return const [];
+    }
+  }
+
+  /// Soft-delete a business image by setting deletedAt.
+  static Future<void> deleteBusinessImage(String imageId) async {
+    try {
+      await SupabaseConfig.client
+          .from('businesssimages')
+          .update({'deletedAt': DateTime.now().toUtc().toIso8601String()})
+          .eq('id', imageId);
+    } catch (e) {
+      debugPrint('UserService.deleteBusinessImage failed: $e');
+      rethrow;
+    }
+  }
+
+  /// Add a gallery image entry for a business.
+  static Future<void> addBusinessImage({required String businessId, required String imageUrl}) async {
+    try {
+      final now = DateTime.now().toUtc().toIso8601String();
+      final nextId = await _getNextBusinessImageId();
+      await SupabaseConfig.client.from('businesssimages').insert({
+        'id': nextId,
+        'businessId': businessId,
+        'image': imageUrl,
+        'createdAt': now,
+        'updatedAt': now,
+      });
+    } catch (e) {
+      debugPrint('UserService.addBusinessImage failed: $e');
+      rethrow;
+    }
+  }
+
+  /// Get the next available ID for businesssimages (no auto-increment in Supabase).
+  static Future<int> _getNextBusinessImageId() async {
+    try {
+      final result = await SupabaseConfig.client
+          .from('businesssimages')
+          .select('id')
+          .order('id', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      if (result != null && result['id'] != null) {
+        return (result['id'] as int) + 1;
+      }
+      return 1;
+    } catch (e) {
+      debugPrint('⚠️ Error getting next image ID, using timestamp: $e');
+      return DateTime.now().millisecondsSinceEpoch % 2147483647;
+    }
+  }
+
+  /// Fetch all categories for dropdown selection.
+  static Future<List<Map<String, dynamic>>> fetchAllCategories() async {
+    try {
+      final rows = await SupabaseConfig.client
+          .from('Categories')
+          .select('id,name')
+          .order('name', ascending: true);
+      return (rows as List).whereType<Map>().map((e) => e.map((k, v) => MapEntry(k.toString(), v))).toList();
+    } catch (e) {
+      debugPrint('UserService.fetchAllCategories failed: $e');
+      return const [];
+    }
+  }
+
+  /// Fetch auth identity providers for a single user from `auth.identities`
+  /// via the `get_auth_providers` RPC function.
+  ///
+  /// Returns provider strings like `['email', 'phone', 'google']`.
+  static Future<List<String>> fetchAuthProviders(String socialId) async {
+    if (socialId.trim().isEmpty) return const [];
+    try {
+      final result = await SupabaseConfig.client.rpc(
+        'get_auth_providers',
+        params: {'user_auth_id': socialId},
+      );
+      if (result is List) {
+        return result.map((e) => e.toString()).toList();
+      }
+      return const [];
+    } catch (e) {
+      debugPrint('UserService.fetchAuthProviders failed for $socialId: $e');
+      return const [];
+    }
+  }
+
+  /// Batch-fetch auth identity providers for multiple users.
+  ///
+  /// Returns a map of `{socialId: [provider1, provider2, ...]}`.
+  static Future<Map<String, List<String>>> fetchBatchAuthProviders(List<String> socialIds) async {
+    final ids = socialIds.where((s) => s.trim().isNotEmpty).toSet().toList();
+    if (ids.isEmpty) return const {};
+    try {
+      final result = await SupabaseConfig.client.rpc(
+        'get_batch_auth_providers',
+        params: {'user_auth_ids': ids},
+      );
+      final map = <String, List<String>>{};
+      if (result is List) {
+        for (final row in result) {
+          if (row is! Map) continue;
+          final authId = (row['auth_id'] ?? '').toString();
+          final providers = row['providers'];
+          if (authId.isEmpty) continue;
+          if (providers is List) {
+            map[authId] = providers.map((e) => e.toString()).toList();
+          }
+        }
+      }
+      return map;
+    } catch (e) {
+      debugPrint('UserService.fetchBatchAuthProviders failed: $e');
+      return const {};
     }
   }
 
@@ -235,7 +382,7 @@ class UserService {
       }
       final categoryNameById = await _fetchCategoryNameMap(categoryIds);
 
-      return rows
+      final users = rows
           .map((r) {
             final u = UserData.fromJson(r);
             final id = u.id.trim();
@@ -265,7 +412,26 @@ class UserService {
             // If id is empty (odd schema), keep as-is.
             return categoryType == null ? working : working.copyWith(categoryType: categoryType);
           })
-          .toList(growable: false);
+          .toList();
+
+      // Batch-fetch auth identity providers from auth.identities via RPC.
+      final socialIds = users
+          .map((u) => u.socialId)
+          .where((s) => s.trim().isNotEmpty)
+          .toList();
+      final authProvidersMap = await fetchBatchAuthProviders(socialIds);
+
+      // Attach auth providers to each user.
+      if (authProvidersMap.isNotEmpty) {
+        for (var i = 0; i < users.length; i++) {
+          final providers = authProvidersMap[users[i].socialId];
+          if (providers != null && providers.isNotEmpty) {
+            users[i] = users[i].copyWith(authProviders: providers);
+          }
+        }
+      }
+
+      return users;
     } catch (e) {
       debugPrint('UserService.fetchCustomers failed: $e');
       if (_isMissingTableError(e)) _throwMissingBusinessesTable(e);
@@ -283,9 +449,20 @@ class UserService {
         // Resolve bare-filename avatar to full Storage URL.
         final resolved = GiveawayService.resolveStorageUrl(u.avatar) ?? u.avatar;
         if (resolved != u.avatar) u = u.copyWith(avatar: resolved);
-        if (u.customerNumber.trim().isNotEmpty) return u;
-        final fromSerial = _generateBusinessNumberFromSerialId(u.id);
-        return fromSerial.isNotEmpty ? u.copyWith(customerNumber: fromSerial) : u.copyWith(customerNumber: _generateCustomerNumber(u.id));
+        if (u.customerNumber.trim().isEmpty) {
+          final fromSerial = _generateBusinessNumberFromSerialId(u.id);
+          u = fromSerial.isNotEmpty
+              ? u.copyWith(customerNumber: fromSerial)
+              : u.copyWith(customerNumber: _generateCustomerNumber(u.id));
+        }
+        // Fetch auth identity providers from auth.identities via RPC.
+        if (u.socialId.trim().isNotEmpty) {
+          final providers = await fetchAuthProviders(u.socialId);
+          if (providers.isNotEmpty) {
+            u = u.copyWith(authProviders: providers);
+          }
+        }
+        return u;
       } catch (e) {
         lastErr = e;
       }

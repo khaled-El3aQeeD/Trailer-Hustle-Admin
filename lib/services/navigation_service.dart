@@ -62,6 +62,12 @@ class NavigationService {
         url: '/notifications',
         isActive: activeUrl == '/notifications',
       ),
+      NavigationItem(
+        title: 'Send Push',
+        icon: Icons.campaign_outlined,
+        url: '/send-push',
+        isActive: activeUrl == '/send-push',
+      ),
     ];
   }
 

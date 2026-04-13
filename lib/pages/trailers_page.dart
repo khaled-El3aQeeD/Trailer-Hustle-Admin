@@ -5,6 +5,8 @@ import 'package:trailerhustle_admin/core/constants.dart';
 import 'package:trailerhustle_admin/theme/theme_provider.dart';
 import 'package:trailerhustle_admin/widgets/dashboard_header.dart';
 import 'package:trailerhustle_admin/widgets/sidebar.dart';
+import 'package:trailerhustle_admin/widgets/adaptive_sidebar.dart';
+import 'package:trailerhustle_admin/services/sidebar_controller.dart';
 import 'package:trailerhustle_admin/widgets/manufacturers_table_card.dart';
 import 'package:trailerhustle_admin/widgets/trailers_table_card.dart';
 import 'package:trailerhustle_admin/widgets/trailer_types_table_card.dart';
@@ -35,17 +37,11 @@ class TrailersPage extends StatefulWidget {
 }
 
 class _TrailersPageState extends State<TrailersPage> with TickerProviderStateMixin {
-  bool _isSidebarCollapsed = false;
-  late AnimationController _sidebarAnimationController;
-  late Animation<double> _sidebarAnimation;
   TabController? _tabController;
 
   @override
   void initState() {
     super.initState();
-    _sidebarAnimationController = AnimationController(duration: DashboardConstants.sidebarAnimationDuration, vsync: this);
-    _sidebarAnimation = CurvedAnimation(parent: _sidebarAnimationController, curve: Curves.easeInOut);
-    _sidebarAnimationController.forward();
     if (widget.showTopTabBar) {
       _tabController = TabController(length: 4, vsync: this, initialIndex: widget.initialTabIndex.clamp(0, 3));
     }
@@ -54,23 +50,16 @@ class _TrailersPageState extends State<TrailersPage> with TickerProviderStateMix
   @override
   void dispose() {
     _tabController?.dispose();
-    _sidebarAnimationController.dispose();
     super.dispose();
-  }
-
-  void _toggleSidebar() {
-    setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
-    if (_isSidebarCollapsed) {
-      _sidebarAnimationController.reverse();
-    } else {
-      _sidebarAnimationController.forward();
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     final isMobile = context.theme.breakpoints.md > MediaQuery.of(context).size.width;
     final theme = context.theme;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final sidebarController = context.read<SidebarController>();
+    sidebarController.autoCollapseIfNeeded(screenWidth);
 
     return Scaffold(
       backgroundColor: context.theme.colors.primaryForeground,
@@ -79,18 +68,7 @@ class _TrailersPageState extends State<TrailersPage> with TickerProviderStateMix
           : null,
       body: Row(
         children: [
-          if (!isMobile)
-            AnimatedBuilder(
-              animation: _sidebarAnimation,
-              builder: (context, child) => ClipRect(
-                child: SizeTransition(
-                  sizeFactor: _sidebarAnimation,
-                  axis: Axis.horizontal,
-                  axisAlignment: -1,
-                  child: const Sidebar(),
-                ),
-              ),
-            ),
+          if (!isMobile) const AdaptiveSidebar(),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(8),
@@ -112,8 +90,7 @@ class _TrailersPageState extends State<TrailersPage> with TickerProviderStateMix
                   children: [
                     DashboardHeader(
                       pageTitle: 'Trailers',
-                      onSidebarToggle: isMobile ? null : _toggleSidebar,
-                      sidebarAnimation: isMobile ? null : _sidebarAnimation,
+                      onSidebarToggle: isMobile ? null : () => context.read<SidebarController>().toggle(),
                       onThemeToggle: () => context.read<ThemeProvider>().toggleThemeMode(),
                       themeMode: context.watch<ThemeProvider>().themeMode,
                     ),

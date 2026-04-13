@@ -7,10 +7,10 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:trailerhustle_admin/models/user_data.dart';
 import 'package:trailerhustle_admin/services/file_export_service.dart';
-import 'package:trailerhustle_admin/services/product_service.dart';
 import 'package:trailerhustle_admin/services/trailer_service.dart';
+import 'package:trailerhustle_admin/services/app_navigation_controller.dart';
 import 'package:trailerhustle_admin/services/user_service.dart';
-import 'package:trailerhustle_admin/widgets/user_profile_dialog.dart';
+import 'package:provider/provider.dart';
 
 /// Admin dashboard card that lists businesses with search, filters, actions and export.
 class CustomersTableCard extends StatefulWidget {
@@ -26,12 +26,12 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
   String? _error;
   List<UserData> _all = const [];
   Map<int, int> _trailerCounts = const {};
-  Map<int, int> _productCounts = const {};
 
   int _subscriptionFilter = 0; // 0 all, 1 free, 2 lite, 3 pro
   int _activeFilter = 0; // 0 all, 1 active, 2 inactive
-  int _hustleProFilter = 0; // 0 all, 1 featured, 2 not
-  int _sortMode = 0; // 0 default, 1 trailers desc
+  int _sortMode = 0; // 0 default, 1 newest, 2 oldest, 3 category, 4 most trailers
+  int _loginMethodFilter = 0; // 0 all, 1 email, 2 phone, 3 google, 4 apple
+  int _verifiedFilter = 0; // 0 all, 1 verified, 2 unverified
 
   String _categoryFilter = 'All';
 
@@ -66,15 +66,9 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
       // Try to batch-load trailer counts for the businesses in the list.
       // This is best-effort; the table still renders even if this fails.
       Map<int, int> trailerCounts = const {};
-      Map<int, int> productCounts = const {};
       try {
         final businessIds = list.map((u) => int.tryParse(u.id)).whereType<int>().toList(growable: false);
-        final results = await Future.wait([
-          TrailerService.fetchTrailerCountsForBusinesses(businessIds: businessIds),
-          ProductService.fetchProductCountsForBusinesses(businessIds),
-        ]);
-        trailerCounts = results[0];
-        productCounts = results[1];
+        trailerCounts = await TrailerService.fetchTrailerCountsForBusinesses(businessIds: businessIds);
       } catch (e) {
         debugPrint('CustomersTableCard trailer count refresh failed: $e');
       }
@@ -82,7 +76,6 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
       setState(() {
         _all = list;
         _trailerCounts = trailerCounts;
-        _productCounts = productCounts;
 
         // Keep the selected category stable, but if it no longer exists, reset.
         final options = _categoryOptionsFrom(list);
@@ -120,8 +113,12 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
       if (_subscriptionFilter == 3 && u.subscriptionTier != 'pro') return false;
       if (_activeFilter == 1 && !u.isActive) return false;
       if (_activeFilter == 2 && u.isActive) return false;
-      if (_hustleProFilter == 1 && !u.hasHustleProPlan) return false;
-      if (_hustleProFilter == 2 && u.hasHustleProPlan) return false;
+      if (_loginMethodFilter == 1 && !u.loginMethods.contains('Email')) return false;
+      if (_loginMethodFilter == 2 && !u.loginMethods.contains('Phone')) return false;
+      if (_loginMethodFilter == 3 && !u.loginMethods.contains('Google')) return false;
+      if (_loginMethodFilter == 4 && !u.loginMethods.contains('Apple')) return false;
+      if (_verifiedFilter == 1 && !(u.isVerify ?? false)) return false;
+      if (_verifiedFilter == 2 && (u.isVerify ?? false)) return false;
       if (_categoryFilter != 'All') {
         if (u.categoryType.trim().toLowerCase() != _categoryFilter.toLowerCase()) return false;
       }
@@ -146,11 +143,33 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
     if (_sortMode == 0) return list;
     final sorted = List<UserData>.of(list);
     sorted.sort((a, b) {
-      final byTrailers = _trailerCountForUser(b).compareTo(_trailerCountForUser(a));
-      if (byTrailers != 0) return byTrailers;
-      final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
-      if (byName != 0) return byName;
-      return a.id.compareTo(b.id);
+      switch (_sortMode) {
+        case 1: // Newest Account
+          final cmp = b.createdAt.compareTo(a.createdAt);
+          if (cmp != 0) return cmp;
+          return a.id.compareTo(b.id);
+        case 2: // Oldest Account
+          final cmp = a.createdAt.compareTo(b.createdAt);
+          if (cmp != 0) return cmp;
+          return a.id.compareTo(b.id);
+        case 3: // Category
+          final catA = a.categoryType.trim().toLowerCase();
+          final catB = b.categoryType.trim().toLowerCase();
+          // Push empty categories to the end.
+          if (catA.isEmpty && catB.isNotEmpty) return 1;
+          if (catA.isNotEmpty && catB.isEmpty) return -1;
+          final cmp = catA.compareTo(catB);
+          if (cmp != 0) return cmp;
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        case 4: // Most Trailers
+          final byTrailers = _trailerCountForUser(b).compareTo(_trailerCountForUser(a));
+          if (byTrailers != 0) return byTrailers;
+          final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+          if (byName != 0) return byName;
+          return a.id.compareTo(b.id);
+        default:
+          return 0;
+      }
     });
     return sorted;
   }
@@ -200,7 +219,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
   Future<void> _exportExcelCsv() async {
     final list = _applySort(_filtered);
     final rows = <List<String>>[
-      ['ID', 'Business ID', 'Name', 'Category Type', 'Email', 'Phone', 'Created on Date', 'Trailers', 'Tier', 'Status', 'Is Featured'],
+      ['ID', 'Business ID', 'Name', 'Category Type', 'Email', 'Login Method', 'Phone', 'Created on Date', 'Trailers', 'Tier', 'Status'],
       ...list.map(
         (u) => [
           u.id,
@@ -208,12 +227,12 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
           u.name,
           u.categoryType.trim().isEmpty ? '—' : u.categoryType.trim(),
           u.email,
+          u.loginMethods.join(', '),
           u.phone,
           _formatCreatedOn(u.createdAt),
           '${_trailerCountForUser(u)}',
           u.subscriptionTier[0].toUpperCase() + u.subscriptionTier.substring(1),
           u.isActive ? 'Active' : 'Inactive',
-          u.hasHustleProPlan ? 'Yes' : 'No',
         ],
       ),
     ];
@@ -236,7 +255,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
             pw.Text('Businesses', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
             pw.SizedBox(height: 12),
             pw.Table.fromTextArray(
-              headers: const ['ID', 'Business ID', 'Name', 'Category', 'Email', 'Created on', 'Trailers', 'Tier', 'Status', 'Is Featured'],
+              headers: const ['ID', 'Business ID', 'Name', 'Category', 'Email', 'Login', 'Created on', 'Trailers', 'Tier', 'Status'],
               data: list
                   .map(
                     (u) => [
@@ -245,11 +264,11 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
                       u.name,
                       u.categoryType.trim().isEmpty ? '—' : u.categoryType.trim(),
                       u.email,
+                      u.loginMethods.join(', '),
                       _formatCreatedOn(u.createdAt),
                       '${_trailerCountForUser(u)}',
                       u.subscriptionTier[0].toUpperCase() + u.subscriptionTier.substring(1),
                       u.isActive ? 'Active' : 'Inactive',
-                      u.hasHustleProPlan ? 'Yes' : 'No',
                     ],
                   )
                   .toList(growable: false),
@@ -264,11 +283,11 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
                 2: pw.FlexColumnWidth(1.2),
                 3: pw.FlexColumnWidth(1.1),
                 4: pw.FlexColumnWidth(1.8),
-                5: pw.FlexColumnWidth(1.0),
-                6: pw.FlexColumnWidth(0.7),
-                7: pw.FlexColumnWidth(1.0),
-                8: pw.FlexColumnWidth(1.0),
-                9: pw.FlexColumnWidth(0.9),
+                5: pw.FlexColumnWidth(0.8),
+                6: pw.FlexColumnWidth(1.0),
+                7: pw.FlexColumnWidth(0.7),
+                8: pw.FlexColumnWidth(0.8),
+                9: pw.FlexColumnWidth(0.8),
               },
             ),
           ];
@@ -300,168 +319,17 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
     );
   }
 
-  Future<void> _openEdit(UserData user) async {
-    final name = TextEditingController(text: user.name);
-    final email = TextEditingController(text: user.email);
-    final phone = TextEditingController(text: user.phone);
-    var isActive = user.isActive;
-    var selectedTier = user.subscriptionTier;
-    var saving = false;
+  // Column indices for responsive visibility.
+  static const _columnLabels = ['ID', 'Business', 'Email', 'Login Method', 'Category Type', 'Created on Date', 'Trailers', 'Tier', 'Status', 'Actions'];
 
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        final theme = context.theme;
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.only(
-              left: 12,
-              right: 12,
-              bottom: MediaQuery.of(context).viewInsets.bottom + 12,
-              top: 12,
-            ),
-            child: Container(
-              decoration: BoxDecoration(
-                color: theme.colors.background,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: theme.colors.border),
-              ),
-              padding: const EdgeInsets.all(16),
-              child: StatefulBuilder(
-                builder: (context, setSheetState) {
-                  Future<void> save() async {
-                    if (saving) return;
-                    setSheetState(() => saving = true);
-                    try {
-                      final updated = user.copyWith(
-                        name: name.text.trim(),
-                        email: email.text.trim(),
-                        phone: phone.text.trim(),
-                        isActive: isActive,
-                        isSubscribed: selectedTier != 'free',
-                        hasHustleProPlan: selectedTier == 'pro',
-                        subscriptionTier: selectedTier,
-                        updatedAt: DateTime.now().toUtc(),
-                      );
-                      await UserService.updateUser(updated);
-                      if (!mounted) return;
-                      Navigator.of(context).pop();
-                      await _refresh();
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('Business updated.')));
-                    } catch (e) {
-                      debugPrint('Failed to update business: $e');
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(this.context)
-                          .showSnackBar(SnackBar(content: Text('Failed to update: $e')));
-                    } finally {
-                      if (mounted) setSheetState(() => saving = false);
-                    }
-                  }
-
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Edit business',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.w800),
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(FIcons.x),
-                            iconSize: 16,
-                            style: IconButton.styleFrom(
-                              minimumSize: const Size(38, 38),
-                              padding: EdgeInsets.zero,
-                              foregroundColor: theme.colors.mutedForeground,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'ID: ${user.id}  •  Business ID: ${user.customerNumber}',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: theme.colors.mutedForeground),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(controller: name, decoration: const InputDecoration(labelText: 'Name')),
-                      const SizedBox(height: 10),
-                      TextField(controller: email, decoration: const InputDecoration(labelText: 'Email')),
-                      const SizedBox(height: 10),
-                      TextField(controller: phone, decoration: const InputDecoration(labelText: 'Phone')),
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: theme.colors.muted.withValues(alpha: 0.22),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: theme.colors.border),
-                        ),
-                        child: Column(
-                          children: [
-                            SwitchListTile.adaptive(
-                              value: isActive,
-                              onChanged: saving ? null : (v) => setSheetState(() => isActive = v),
-                              title: const Text('Account active'),
-                               subtitle: const Text('If off, the business is deactivated.'),
-                            ),
-                            ListTile(
-                              title: const Text('Subscription tier'),
-                              subtitle: const Text('Select the business subscription level.'),
-                              trailing: DropdownButton<String>(
-                                value: selectedTier,
-                                borderRadius: BorderRadius.circular(12),
-                                items: const [
-                                  DropdownMenuItem(value: 'free', child: Text('Free')),
-                                  DropdownMenuItem(value: 'lite', child: Text('Lite')),
-                                  DropdownMenuItem(value: 'pro', child: Text('Pro')),
-                                ],
-                                onChanged: saving ? null : (v) {
-                                  if (v == null) return;
-                                  setSheetState(() => selectedTier = v);
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: saving ? null : save,
-                          icon: Icon(Icons.save_outlined, size: 18, color: Theme.of(context).colorScheme.onPrimary),
-                          label: Text(saving ? 'Saving…' : 'Save changes', style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-        );
-      },
-    );
-
-    name.dispose();
-    email.dispose();
-    phone.dispose();
+  /// Returns column indices to display based on available width.
+  static Set<int> _visibleColumns(double width) {
+    if (width >= 1100) return const {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+    if (width >= 800) return const {0, 1, 5, 6, 7, 8, 9};
+    return const {1, 6, 7, 8, 9};
   }
 
-  DataRow _rowFor(BuildContext context, UserData u) {
+  DataRow _rowFor(BuildContext context, UserData u, Set<int> visible) {
     final theme = context.theme;
     TextStyle? cellStyle({bool muted = false}) => Theme.of(context)
         .textTheme
@@ -470,10 +338,8 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
 
     final businessId = int.tryParse(u.id);
     final trailerCount = businessId == null ? null : _trailerCounts[businessId];
-    final productCount = businessId == null ? null : _productCounts[businessId];
 
-    return DataRow(
-      cells: [
+    final allCells = [
         DataCell(
           ConstrainedBox(
             constraints: const BoxConstraints(minWidth: 120, maxWidth: 160),
@@ -555,6 +421,23 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
           ),
         ),
         DataCell(
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: u.loginMethods.map((m) => _pill(
+              context: context,
+              text: m,
+              color: m == 'Google'
+                  ? const Color(0xFFEA4335)
+                  : m == 'Apple'
+                      ? const Color(0xFF333333)
+                      : m == 'Phone'
+                          ? const Color(0xFF34C759)
+                          : const Color(0xFF4A90D9),
+            )).toList(),
+          ),
+        ),
+        DataCell(
           ConstrainedBox(
             constraints: const BoxConstraints(minWidth: 170, maxWidth: 220),
             child: Text(
@@ -576,19 +459,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
               decorationColor: theme.colors.primary.withValues(alpha: 0.55),
             ),
           ),
-          onTap: trailerCount == null ? null : () => UserProfileDialog.show(context, user: u, initialTabIndex: 1),
-        ),
-        DataCell(
-          Text(
-            productCount?.toString() ?? '—',
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: productCount == null ? theme.colors.mutedForeground : theme.colors.primary,
-              fontWeight: FontWeight.w800,
-              decoration: productCount == null ? null : TextDecoration.underline,
-              decorationColor: theme.colors.primary.withValues(alpha: 0.55),
-            ),
-          ),
-          onTap: productCount == null ? null : () => UserProfileDialog.show(context, user: u, initialTabIndex: 2),
+          onTap: trailerCount == null ? null : () => context.read<AppNavigationController>().goToProfile(u, tabIndex: 1),
         ),
         DataCell(
           _pill(
@@ -608,41 +479,22 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
             color: u.isActive ? theme.colors.secondary : theme.colors.destructive,
           ),
         ),
+        // 9: Actions
         DataCell(
-          _pill(
-            context: context,
-            text: u.hasHustleProPlan ? 'Yes' : 'No',
-            color: u.hasHustleProPlan ? Colors.green : Colors.red,
+          FilledButton.icon(
+            onPressed: () => context.read<AppNavigationController>().goToProfile(u),
+            icon: const Icon(Icons.visibility_outlined, size: 16),
+            label: const Text('View'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
           ),
         ),
-        DataCell(
-          Wrap(
-            spacing: 8,
-            children: [
-              IconButton(
-                tooltip: 'View',
-                onPressed: () => UserProfileDialog.show(context, user: u),
-                icon: const Icon(Icons.visibility_outlined),
-                style: IconButton.styleFrom(
-                  backgroundColor: theme.colors.muted.withValues(alpha: 0.25),
-                  foregroundColor: theme.colors.foreground,
-                  padding: const EdgeInsets.all(10),
-                ),
-              ),
-              IconButton(
-                tooltip: 'Edit',
-                onPressed: () => _openEdit(u),
-                icon: const Icon(Icons.edit_outlined),
-                style: IconButton.styleFrom(
-                  backgroundColor: theme.colors.primary.withValues(alpha: 0.14),
-                  foregroundColor: theme.colors.primary,
-                  padding: const EdgeInsets.all(10),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+      ];
+
+    return DataRow(
+      cells: [for (int i = 0; i < allCells.length; i++) if (visible.contains(i)) allCells[i]],
     );
   }
 
@@ -693,95 +545,217 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
                     ),
                   ),
                 ),
-                SegmentedButton<int>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: 0, label: Text('All tiers')),
-                    ButtonSegment(value: 1, label: Text('Free')),
-                    ButtonSegment(value: 2, label: Text('Lite')),
-                    ButtonSegment(value: 3, label: Text('Pro')),
-                  ],
-                  selected: {_subscriptionFilter},
-                  onSelectionChanged: _loading
-                      ? null
-                      : (s) => setState(() {
-                          _subscriptionFilter = s.first;
-                          _page = 0;
-                        }),
-                ),
-                if (categories.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: theme.colors.border.withValues(alpha: 0.8)),
-                      color: theme.colors.muted.withValues(alpha: 0.10),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: _categoryFilter,
-                        borderRadius: BorderRadius.circular(14),
-                        icon: Icon(Icons.expand_more, color: theme.colors.mutedForeground),
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(color: theme.colors.foreground),
-                        items: [
-                          const DropdownMenuItem(value: 'All', child: Text('All categories')),
-                          ...categories.map((c) => DropdownMenuItem(value: c, child: Text(c))),
-                        ],
-                        onChanged: _loading
-                            ? null
-                            : (v) {
-                                if (v == null) return;
-                                setState(() {
-                                  _categoryFilter = v;
-                                  _page = 0;
-                                });
-                              },
-                      ),
+                // -- Subscription Tier dropdown --
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: theme.colors.border.withValues(alpha: 0.8)),
+                    color: theme.colors.muted.withValues(alpha: 0.10),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      value: _subscriptionFilter,
+                      borderRadius: BorderRadius.circular(14),
+                      icon: Icon(Icons.expand_more, color: theme.colors.mutedForeground),
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(color: theme.colors.foreground),
+                      items: const [
+                        DropdownMenuItem(value: 0, child: Text('All tiers')),
+                        DropdownMenuItem(value: 1, child: Text('Free')),
+                        DropdownMenuItem(value: 2, child: Text('Lite')),
+                        DropdownMenuItem(value: 3, child: Text('Pro')),
+                      ],
+                      onChanged: _loading
+                          ? null
+                          : (v) {
+                              if (v == null) return;
+                              setState(() {
+                                _subscriptionFilter = v;
+                                _page = 0;
+                              });
+                            },
                     ),
                   ),
-                SegmentedButton<int>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: 0, label: Text('All status')),
-                    ButtonSegment(value: 1, label: Text('Active')),
-                    ButtonSegment(value: 2, label: Text('Inactive')),
-                  ],
-                  selected: {_activeFilter},
-                  onSelectionChanged: _loading
-                      ? null
-                      : (s) => setState(() {
-                          _activeFilter = s.first;
-                          _page = 0;
-                        }),
                 ),
-                SegmentedButton<int>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: 0, label: Text('All featured')),
-                    ButtonSegment(value: 1, label: Text('Yes')),
-                    ButtonSegment(value: 2, label: Text('No')),
-                  ],
-                  selected: {_hustleProFilter},
-                  onSelectionChanged: _loading
-                      ? null
-                      : (s) => setState(() {
-                          _hustleProFilter = s.first;
-                          _page = 0;
-                        }),
+                // -- Status dropdown --
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: theme.colors.border.withValues(alpha: 0.8)),
+                    color: theme.colors.muted.withValues(alpha: 0.10),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      value: _activeFilter,
+                      borderRadius: BorderRadius.circular(14),
+                      icon: Icon(Icons.expand_more, color: theme.colors.mutedForeground),
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(color: theme.colors.foreground),
+                      items: const [
+                        DropdownMenuItem(value: 0, child: Text('All status')),
+                        DropdownMenuItem(value: 1, child: Text('Active')),
+                        DropdownMenuItem(value: 2, child: Text('Inactive')),
+                      ],
+                      onChanged: _loading
+                          ? null
+                          : (v) {
+                              if (v == null) return;
+                              setState(() {
+                                _activeFilter = v;
+                                _page = 0;
+                              });
+                            },
+                    ),
+                  ),
                 ),
-                SegmentedButton<int>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: 0, label: Text('Default order')),
-                    ButtonSegment(value: 1, label: Text('Most trailers')),
-                  ],
-                  selected: {_sortMode},
-                  onSelectionChanged: _loading
+                // -- Category dropdown --
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: theme.colors.border.withValues(alpha: 0.8)),
+                    color: theme.colors.muted.withValues(alpha: 0.10),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      value: _loginMethodFilter,
+                      borderRadius: BorderRadius.circular(14),
+                      icon: Icon(Icons.expand_more, color: theme.colors.mutedForeground),
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(color: theme.colors.foreground),
+                      items: const [
+                        DropdownMenuItem(value: 0, child: Text('All login methods')),
+                        DropdownMenuItem(value: 1, child: Text('Email')),
+                        DropdownMenuItem(value: 2, child: Text('Phone')),
+                        DropdownMenuItem(value: 3, child: Text('Google')),
+                        DropdownMenuItem(value: 4, child: Text('Apple')),
+                      ],
+                      onChanged: _loading
+                          ? null
+                          : (v) {
+                              if (v == null) return;
+                              setState(() {
+                                _loginMethodFilter = v;
+                                _page = 0;
+                              });
+                            },
+                    ),
+                  ),
+                ),
+                // -- Verified dropdown --
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: theme.colors.border.withValues(alpha: 0.8)),
+                    color: theme.colors.muted.withValues(alpha: 0.10),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      value: _verifiedFilter,
+                      borderRadius: BorderRadius.circular(14),
+                      icon: Icon(Icons.expand_more, color: theme.colors.mutedForeground),
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(color: theme.colors.foreground),
+                      items: const [
+                        DropdownMenuItem(value: 0, child: Text('All verification')),
+                        DropdownMenuItem(value: 1, child: Text('Verified')),
+                        DropdownMenuItem(value: 2, child: Text('Unverified')),
+                      ],
+                      onChanged: _loading
+                          ? null
+                          : (v) {
+                              if (v == null) return;
+                              setState(() {
+                                _verifiedFilter = v;
+                                _page = 0;
+                              });
+                            },
+                    ),
+                  ),
+                ),
+                // -- Category type dropdown --
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: theme.colors.border.withValues(alpha: 0.8)),
+                    color: theme.colors.muted.withValues(alpha: 0.10),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _categoryFilter,
+                      borderRadius: BorderRadius.circular(14),
+                      icon: Icon(Icons.expand_more, color: theme.colors.mutedForeground),
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(color: theme.colors.foreground),
+                      items: [
+                        const DropdownMenuItem(value: 'All', child: Text('All categories')),
+                        ...categories.map((c) => DropdownMenuItem(value: c, child: Text(c))),
+                      ],
+                      onChanged: _loading
+                          ? null
+                          : (v) {
+                              if (v == null) return;
+                              setState(() {
+                                _categoryFilter = v;
+                                _page = 0;
+                              });
+                            },
+                    ),
+                  ),
+                ),
+                // -- Sort dropdown --
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: theme.colors.border.withValues(alpha: 0.8)),
+                    color: theme.colors.muted.withValues(alpha: 0.10),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      value: _sortMode,
+                      borderRadius: BorderRadius.circular(14),
+                      icon: Icon(Icons.expand_more, color: theme.colors.mutedForeground),
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(color: theme.colors.foreground),
+                      items: const [
+                        DropdownMenuItem(value: 0, child: Text('Default sort')),
+                        DropdownMenuItem(value: 1, child: Text('Newest Account')),
+                        DropdownMenuItem(value: 2, child: Text('Oldest Account')),
+                        DropdownMenuItem(value: 3, child: Text('Category')),
+                        DropdownMenuItem(value: 4, child: Text('Most Trailers')),
+                      ],
+                      onChanged: _loading
+                          ? null
+                          : (v) {
+                              if (v == null) return;
+                              setState(() {
+                                _sortMode = v;
+                                _page = 0;
+                              });
+                            },
+                    ),
+                  ),
+                ),
+                // -- Reset Filters button --
+                OutlinedButton.icon(
+                  onPressed: _loading
                       ? null
-                      : (s) => setState(() {
-                          _sortMode = s.first;
-                          _page = 0;
-                        }),
+                      : () => setState(() {
+                            _subscriptionFilter = 0;
+                            _activeFilter = 0;
+                            _loginMethodFilter = 0;
+                            _verifiedFilter = 0;
+                            _categoryFilter = 'All';
+                            _sortMode = 0;
+                            _search.clear();
+                            _page = 0;
+                          }),
+                  icon: Icon(Icons.restart_alt_outlined, size: 18, color: theme.colors.destructive),
+                  label: Text('Reset Filters', style: TextStyle(color: theme.colors.destructive)),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: theme.colors.destructive.withValues(alpha: 0.5)),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+                  ),
                 ),
                 const SizedBox(width: 4),
                 OutlinedButton.icon(
@@ -833,28 +807,29 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
                           headingRowHeight: 46,
                         ),
                       ),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(minWidth: 1700),
-                          child: DataTable(
-                            showCheckboxColumn: false,
-                            columns: const [
-                              DataColumn(label: Text('ID')),
-                              DataColumn(label: Text('Business')),
-                              DataColumn(label: Text('Email')),
-                              DataColumn(label: Text('Category Type')),
-                              DataColumn(label: Text('Created on Date')),
-                              DataColumn(label: Text('Trailers')),
-  DataColumn(label: Text('Products')),
-                              DataColumn(label: Text('Tier')),
-                              DataColumn(label: Text('Status')),
-                              DataColumn(label: Text('Is Featured?')),
-                              DataColumn(label: Text('Actions')),
-                            ],
-                            rows: pageItems.map((u) => _rowFor(context, u)).toList(growable: false),
-                          ),
-                        ),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final visible = _visibleColumns(constraints.maxWidth);
+                          final minW = visible.length >= 10 ? 1200.0 : visible.length >= 7 ? 800.0 : 600.0;
+                          return Scrollbar(
+                            thumbVisibility: true,
+                            scrollbarOrientation: ScrollbarOrientation.bottom,
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(minWidth: minW),
+                                child: DataTable(
+                                  showCheckboxColumn: false,
+                                  columns: [
+                                    for (int i = 0; i < _columnLabels.length; i++)
+                                      if (visible.contains(i)) DataColumn(label: Text(_columnLabels[i])),
+                                  ],
+                                  rows: pageItems.map((u) => _rowFor(context, u, visible)).toList(growable: false),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ),

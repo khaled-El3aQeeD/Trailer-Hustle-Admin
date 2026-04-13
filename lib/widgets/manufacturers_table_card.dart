@@ -457,48 +457,52 @@ class _BrandsTable extends StatelessWidget {
             headingRowHeight: 46,
           ),
         ),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 920),
-            child: DataTable(
-              showCheckboxColumn: false,
-              columns: const [
-                DataColumn(label: Text('ID')),
-                DataColumn(label: Text('Manufacturer')),
-                DataColumn(label: Text('Published')),
-                DataColumn(label: Text('Updated')),
-                DataColumn(label: Text('')),
-              ],
-              rows: brands.map((b) {
-                final busy = updatingIds.contains(b.id);
-                final actionLabel = actionLabelFor(b);
-                return DataRow(
-                  cells: [
-                    DataCell(Text('#${b.id}', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: theme.colors.mutedForeground))),
-                    DataCell(
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: 320, maxWidth: 560),
-                        child: Text(b.title.trim().isEmpty ? '—' : b.title.trim(), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      ),
-                    ),
-                    DataCell(_PublishedPill(isPublished: b.isPublished)),
-                    DataCell(Text(_dateText(b.updatedAt), style: Theme.of(context).textTheme.labelSmall?.copyWith(color: theme.colors.mutedForeground))),
-                    DataCell(
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          onPressed: busy ? null : () => onTogglePublished(b),
-                          icon: busy
-                              ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: theme.colors.mutedForeground))
-                               : Icon(b.isPublished ? Icons.visibility_off_outlined : Icons.verified_outlined, size: 18, color: theme.colors.foreground),
-                          label: Text(actionLabel, style: Theme.of(context).textTheme.labelLarge?.copyWith(color: theme.colors.foreground, fontWeight: FontWeight.w700)),
+        child: Scrollbar(
+          thumbVisibility: true,
+          scrollbarOrientation: ScrollbarOrientation.bottom,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 700),
+              child: DataTable(
+                showCheckboxColumn: false,
+                columns: const [
+                  DataColumn(label: Text('ID')),
+                  DataColumn(label: Text('Manufacturer')),
+                  DataColumn(label: Text('Published')),
+                  DataColumn(label: Text('Updated')),
+                  DataColumn(label: Text('')),
+                ],
+                rows: brands.map((b) {
+                  final busy = updatingIds.contains(b.id);
+                  final actionLabel = actionLabelFor(b);
+                  return DataRow(
+                    cells: [
+                      DataCell(Text('#${b.id}', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: theme.colors.mutedForeground))),
+                      DataCell(
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(minWidth: 200, maxWidth: 400),
+                          child: Text(b.title.trim().isEmpty ? '—' : b.title.trim(), maxLines: 1, overflow: TextOverflow.ellipsis),
                         ),
                       ),
-                    ),
-                  ],
-                );
-              }).toList(growable: false),
+                      DataCell(_PublishedPill(isPublished: b.isPublished)),
+                      DataCell(Text(_dateText(b.updatedAt), style: Theme.of(context).textTheme.labelSmall?.copyWith(color: theme.colors.mutedForeground))),
+                      DataCell(
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: busy ? null : () => onTogglePublished(b),
+                            icon: busy
+                                ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: theme.colors.mutedForeground))
+                                : Icon(b.isPublished ? Icons.visibility_off_outlined : Icons.verified_outlined, size: 18, color: theme.colors.foreground),
+                            label: Text(actionLabel, style: Theme.of(context).textTheme.labelLarge?.copyWith(color: theme.colors.foreground, fontWeight: FontWeight.w700)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(growable: false),
+              ),
             ),
           ),
         ),

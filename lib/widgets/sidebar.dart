@@ -42,6 +42,9 @@ class Sidebar extends StatelessWidget {
       case '/notifications':
         nav.go(AppRoute.notifications);
         break;
+      case '/send-push':
+        nav.go(AppRoute.sendPush);
+        break;
       default:
         debugPrint('Navigation not implemented for: $url');
     }
@@ -59,6 +62,8 @@ class Sidebar extends StatelessWidget {
       AppRoute.trailerTypesEdit => '/trailers/types',
       AppRoute.manufacturersEdit => '/trailers/manufacturers',
       AppRoute.notifications => '/notifications',
+      AppRoute.sendPush => '/send-push',
+      AppRoute.customerProfile => '/dashboard',
     };
     return PatchedFSidebar(
       style: sidebar_style.sidebarStyle(

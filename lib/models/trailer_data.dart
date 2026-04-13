@@ -22,6 +22,8 @@ class TrailerData {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  bool get isDeleted => deletedAt != null;
+
   const TrailerData({
     required this.id,
     required this.businessId,

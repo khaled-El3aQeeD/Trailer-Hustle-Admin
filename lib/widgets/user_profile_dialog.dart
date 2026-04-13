@@ -21,6 +21,27 @@ class UserProfileDialog extends StatelessWidget {
   final UserData user;
   final int initialTabIndex;
 
+  /// Expose tab builders so the full-page [UserProfilePage] can reuse them.
+  static Widget buildSummaryTab(BuildContext context, {required UserData user, required String name, required String email, required String phone, required String cityState}) {
+    return _BusinessSummaryTab(user: user, name: name, email: email, phone: phone, cityState: cityState, website: user.website);
+  }
+
+  static Widget buildTrailersTab({required UserData user}) {
+    return _TrailersTab(user: user);
+  }
+
+  static Widget buildServicesTab({required UserData user}) {
+    return _ServicesTab(user: user);
+  }
+
+  static Widget buildBranchesTab() {
+    return const _EmptyCollectionTab(
+      title: 'Branches',
+      description: 'No branches have been added for this business.',
+      icon: Icons.hub_outlined,
+    );
+  }
+
   static Future<void> show(BuildContext context, {required UserData user, int initialTabIndex = 0}) async {
     final mq = MediaQuery.of(context);
     final width = mq.size.width;
@@ -738,18 +759,33 @@ class _TrailersTabState extends State<_TrailersTab> {
           return _TrailersEmptyState(hint: hint);
         }
 
+        // Sort: active trailers first, then removed.
+        final sorted = List<TrailerData>.of(trailers)
+          ..sort((a, b) {
+            if (a.isDeleted != b.isDeleted) return a.isDeleted ? 1 : -1;
+            return 0;
+          });
+        final activeCount = sorted.where((t) => !t.isDeleted).length;
+        final removedCount = sorted.where((t) => t.isDeleted).length;
+        final headerParts = <String>[];
+        if (activeCount > 0) headerParts.add('$activeCount Active');
+        if (removedCount > 0) headerParts.add('$removedCount Removed');
+        final headerLabel = headerParts.isEmpty
+            ? 'Trailers (${sorted.length})'
+            : 'Trailers (${headerParts.join(' · ')})';
+
         return SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
           child: Column(
             children: [
               _AirbnbCard(
-                title: 'Trailers (${trailers.length})',
+                title: headerLabel,
                 icon: Icons.local_shipping_outlined,
                 child: Column(
                   children: [
-                    for (final t in trailers) ...[
+                    for (final t in sorted) ...[
                       _TrailerRow(trailer: t),
-                      if (t != trailers.last) const SizedBox(height: 10),
+                      if (t != sorted.last) const SizedBox(height: 10),
                     ],
                   ],
                 ),
@@ -932,79 +968,122 @@ class _TrailerRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = context.theme;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => TrailerDetailsDialog.show(context, trailer: trailer),
-        splashFactory: NoSplash.splashFactory,
-        highlightColor: Colors.transparent,
-        hoverColor: theme.colors.muted.withValues(alpha: 0.20),
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: theme.colors.muted.withValues(alpha: 0.16),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: theme.colors.border),
-          ),
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Container(
-                  width: 84,
-                  height: 64,
-                  color: theme.colors.muted.withValues(alpha: 0.20),
-                  child: trailer.image.trim().isEmpty
-                      ? Icon(Icons.image_not_supported_outlined, color: theme.colors.mutedForeground, size: 22)
-                      : Image.network(
-                          trailer.image,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => Icon(Icons.broken_image_outlined, color: theme.colors.mutedForeground, size: 22),
+    final deleted = trailer.isDeleted;
+    return Opacity(
+      opacity: deleted ? 0.55 : 1.0,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => TrailerDetailsDialog.show(context, trailer: trailer),
+          splashFactory: NoSplash.splashFactory,
+          highlightColor: Colors.transparent,
+          hoverColor: theme.colors.muted.withValues(alpha: 0.20),
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: deleted
+                  ? theme.colors.destructive.withValues(alpha: 0.06)
+                  : theme.colors.muted.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: deleted
+                    ? theme.colors.destructive.withValues(alpha: 0.25)
+                    : theme.colors.border,
+              ),
+            ),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    width: 84,
+                    height: 64,
+                    color: theme.colors.muted.withValues(alpha: 0.20),
+                    child: trailer.image.trim().isEmpty
+                        ? Icon(Icons.image_not_supported_outlined, color: theme.colors.mutedForeground, size: 22)
+                        : Image.network(
+                            trailer.image,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Icon(Icons.broken_image_outlined, color: theme.colors.mutedForeground, size: 22),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _primaryTitle(),
+                        style: theme.typography.sm.copyWith(fontWeight: FontWeight.w900, color: theme.colors.foreground),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _subtitle(),
+                        style: theme.typography.xs.copyWith(color: theme.colors.mutedForeground, height: 1.3, fontWeight: FontWeight.w800),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: deleted
+                        ? theme.colors.destructive.withValues(alpha: 0.12)
+                        : const Color(0xFF22C55E).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: deleted
+                          ? theme.colors.destructive.withValues(alpha: 0.35)
+                          : const Color(0xFF22C55E).withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        deleted ? Icons.remove_circle : Icons.check_circle,
+                        size: 14,
+                        color: deleted ? theme.colors.destructive : const Color(0xFF22C55E),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        deleted ? 'Removed' : 'Active',
+                        style: theme.typography.xs.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: deleted ? theme.colors.destructive : const Color(0xFF22C55E),
                         ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _primaryTitle(),
-                      style: theme.typography.sm.copyWith(fontWeight: FontWeight.w900, color: theme.colors.foreground),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _subtitle(),
-                      style: theme.typography.xs.copyWith(color: theme.colors.mutedForeground, height: 1.3, fontWeight: FontWeight.w800),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: theme.colors.background,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: theme.colors.border),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.tag, size: 14, color: theme.colors.primary),
+                      const SizedBox(width: 6),
+                      Text('#${trailer.id}', style: theme.typography.xs.copyWith(fontWeight: FontWeight.w900, color: theme.colors.foreground)),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: theme.colors.background,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: theme.colors.border),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.tag, size: 14, color: theme.colors.primary),
-                    const SizedBox(width: 6),
-                    Text('#${trailer.id}', style: theme.typography.xs.copyWith(fontWeight: FontWeight.w900, color: theme.colors.foreground)),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Icon(Icons.chevron_right, size: 18, color: theme.colors.mutedForeground),
-            ],
+                const SizedBox(width: 10),
+                Icon(Icons.chevron_right, size: 18, color: theme.colors.mutedForeground),
+              ],
+            ),
           ),
         ),
       ),

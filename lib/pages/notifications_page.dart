@@ -9,6 +9,8 @@ import 'package:trailerhustle_admin/supabase/supabase_config.dart';
 import 'package:trailerhustle_admin/theme/theme_provider.dart';
 import 'package:trailerhustle_admin/widgets/dashboard_header.dart';
 import 'package:trailerhustle_admin/widgets/sidebar.dart';
+import 'package:trailerhustle_admin/widgets/adaptive_sidebar.dart';
+import 'package:trailerhustle_admin/services/sidebar_controller.dart';
 
 class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
@@ -17,12 +19,7 @@ class NotificationsPage extends StatefulWidget {
   State<NotificationsPage> createState() => _NotificationsPageState();
 }
 
-class _NotificationsPageState extends State<NotificationsPage>
-    with TickerProviderStateMixin {
-  bool _isSidebarCollapsed = false;
-  late AnimationController _sidebarAnimationController;
-  late Animation<double> _sidebarAnimation;
-
+class _NotificationsPageState extends State<NotificationsPage> {
   // Data state
   List<AdminNotificationData> _notifications = [];
   bool _loading = true;
@@ -44,16 +41,6 @@ class _NotificationsPageState extends State<NotificationsPage>
   @override
   void initState() {
     super.initState();
-    _sidebarAnimationController = AnimationController(
-      duration: DashboardConstants.sidebarAnimationDuration,
-      vsync: this,
-    );
-    _sidebarAnimation = CurvedAnimation(
-      parent: _sidebarAnimationController,
-      curve: Curves.easeInOut,
-    );
-    _sidebarAnimationController.forward();
-
     _realtimeChannel = AdminNotificationService.subscribeToChanges(
       onChanged: () => _fetchData(),
     );
@@ -105,17 +92,11 @@ class _NotificationsPageState extends State<NotificationsPage>
     if (_realtimeChannel != null) {
       SupabaseConfig.client.removeChannel(_realtimeChannel!);
     }
-    _sidebarAnimationController.dispose();
     super.dispose();
   }
 
   void _toggleSidebar() {
-    setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
-    if (_isSidebarCollapsed) {
-      _sidebarAnimationController.reverse();
-    } else {
-      _sidebarAnimationController.forward();
-    }
+    context.read<SidebarController>().toggle();
   }
 
   void _onFilterChanged(int type) {
@@ -171,6 +152,8 @@ class _NotificationsPageState extends State<NotificationsPage>
   Widget build(BuildContext context) {
     final isMobile =
         context.theme.breakpoints.md > MediaQuery.of(context).size.width;
+    final screenWidth = MediaQuery.of(context).size.width;
+    context.read<SidebarController>().autoCollapseIfNeeded(screenWidth);
 
     return Scaffold(
       backgroundColor: context.theme.colors.primaryForeground,
@@ -182,18 +165,7 @@ class _NotificationsPageState extends State<NotificationsPage>
           : null,
       body: Row(
         children: [
-          if (!isMobile)
-            AnimatedBuilder(
-              animation: _sidebarAnimation,
-              builder: (context, child) => ClipRect(
-                child: SizeTransition(
-                  sizeFactor: _sidebarAnimation,
-                  axis: Axis.horizontal,
-                  axisAlignment: -1,
-                  child: const Sidebar(),
-                ),
-              ),
-            ),
+          if (!isMobile) const AdaptiveSidebar(),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) => SingleChildScrollView(
@@ -225,8 +197,6 @@ class _NotificationsPageState extends State<NotificationsPage>
                             pageTitle: 'Notifications',
                             onSidebarToggle:
                                 isMobile ? null : _toggleSidebar,
-                            sidebarAnimation:
-                                isMobile ? null : _sidebarAnimation,
                             onThemeToggle: () => context
                                 .read<ThemeProvider>()
                                 .toggleThemeMode(),

@@ -13,6 +13,9 @@ class DashboardConstants {
   /// Width of the sidebar when fully expanded
   static const double sidebarWidth = 260.0;
 
+  /// Width of the sidebar when collapsed (icon-only mode)
+  static const double sidebarCollapsedWidth = 64.0;
+
   /// Threshold for showing the sidebar toggle button
   /// When sidebar width is below this value, the toggle button appears
   static const double sidebarToggleThreshold = 130.0;
