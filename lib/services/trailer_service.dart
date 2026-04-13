@@ -21,7 +21,9 @@ class TrailerService {
   /// Supabase Storage bucket used for trailer images.
   ///
   /// This should match the bucket name configured in Supabase Storage.
-  static const String trailerImagesBucket = 'trailerimages';
+  /// The mobile app uploads to the 'images' bucket (not 'trailerimages' which
+  /// is only the DB table name).
+  static const String trailerImagesBucket = 'images';
 
   static String _contentTypeFromFilename(String filename) {
     final lower = filename.toLowerCase();

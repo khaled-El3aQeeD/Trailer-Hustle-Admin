@@ -307,14 +307,6 @@ class _ProfileContentState extends State<_ProfileContent> {
           icon: Icons.build_outlined,
           childBuilder: (_) => UserProfileDialog.buildServicesTab(user: user),
         ),
-        const SizedBox(height: 16),
-
-        // ── Section 6: Branches ──
-        _ReadOnlySection(
-          title: 'Branches',
-          icon: Icons.business_outlined,
-          childBuilder: (_) => UserProfileDialog.buildBranchesTab(),
-        ),
         const SizedBox(height: 24),
       ],
     );

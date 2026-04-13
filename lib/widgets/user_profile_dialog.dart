@@ -34,20 +34,14 @@ class UserProfileDialog extends StatelessWidget {
     return _ServicesTab(user: user);
   }
 
-  static Widget buildBranchesTab() {
-    return const _EmptyCollectionTab(
-      title: 'Branches',
-      description: 'No branches have been added for this business.',
-      icon: Icons.hub_outlined,
-    );
-  }
+
 
   static Future<void> show(BuildContext context, {required UserData user, int initialTabIndex = 0}) async {
     final mq = MediaQuery.of(context);
     final width = mq.size.width;
     final height = mq.size.height;
     final isCompact = width < 640;
-    final safeTabIndex = initialTabIndex.clamp(0, 3);
+    final safeTabIndex = initialTabIndex.clamp(0, 2);
 
     if (isCompact) {
       await showModalBottomSheet<void>(
@@ -109,8 +103,8 @@ class UserProfileDialog extends StatelessWidget {
     final cityState = user.regularCityState.trim().isEmpty ? '—' : user.regularCityState.trim();
 
     return DefaultTabController(
-      length: 4,
-      initialIndex: initialTabIndex.clamp(0, 3),
+      length: 3,
+      initialIndex: initialTabIndex.clamp(0, 2),
       child: Column(
         children: [
           Padding(
@@ -194,7 +188,6 @@ class UserProfileDialog extends StatelessWidget {
                   Tab(text: 'Business Summary'),
                   Tab(text: 'Trailers'),
                   Tab(text: 'Services & Products'),
-                  Tab(text: 'Branches'),
                 ],
               ),
             ),
@@ -206,11 +199,6 @@ class UserProfileDialog extends StatelessWidget {
                 _BusinessSummaryTab(user: user, name: name, email: email, phone: phone, cityState: cityState, website: user.website),
                 _TrailersTab(user: user),
                 _ServicesTab(user: user),
-                const _EmptyCollectionTab(
-                  title: 'Branches',
-                  description: 'No branches have been added for this business.',
-                  icon: Icons.hub_outlined,
-                ),
               ],
             ),
           ),
@@ -719,13 +707,24 @@ class _TrailersTabState extends State<_TrailersTab> {
     _future = _load();
   }
 
+  /// Primary trailer image resolved from the `trailerimages` table.
+  /// Keyed by trailer id.
+  Map<int, String> _primaryImages = const {};
+
   Future<List<TrailerData>> _load() async {
     final businessId = int.tryParse(widget.user.id.trim());
     if (businessId == null) {
       debugPrint('Trailers tab: could not parse business id from user.id="${widget.user.id}"');
       return const <TrailerData>[];
     }
-    return TrailerService.fetchTrailersForBusiness(businessId: businessId);
+    final trailers = await TrailerService.fetchTrailersForBusiness(businessId: businessId);
+
+    // Fetch primary images from trailerimages table (same approach as mobile)
+    final trailerIds = trailers.map((t) => t.id).where((id) => id > 0).toList();
+    if (trailerIds.isNotEmpty) {
+      _primaryImages = await TrailerService.fetchPrimaryTrailerImagesByTrailerIds(trailerIds: trailerIds);
+    }
+    return trailers;
   }
 
   @override
@@ -784,7 +783,7 @@ class _TrailersTabState extends State<_TrailersTab> {
                 child: Column(
                   children: [
                     for (final t in sorted) ...[
-                      _TrailerRow(trailer: t),
+                      _TrailerRow(trailer: t, resolvedImageUrl: _primaryImages[t.id]),
                       if (t != sorted.last) const SizedBox(height: 10),
                     ],
                   ],
@@ -942,8 +941,10 @@ class _TrailersErrorState extends StatelessWidget {
 }
 
 class _TrailerRow extends StatelessWidget {
-  const _TrailerRow({required this.trailer});
+  const _TrailerRow({required this.trailer, this.resolvedImageUrl});
   final TrailerData trailer;
+  /// Primary image URL resolved from the `trailerimages` table.
+  final String? resolvedImageUrl;
 
   String _primaryTitle() {
     final name = (trailer.trailerName ?? '').trim();
@@ -974,7 +975,7 @@ class _TrailerRow extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => TrailerDetailsDialog.show(context, trailer: trailer),
+          onTap: () => TrailerDetailsDialog.show(context, trailer: trailer, resolvedImageUrl: resolvedImageUrl),
           splashFactory: NoSplash.splashFactory,
           highlightColor: Colors.transparent,
           hoverColor: theme.colors.muted.withValues(alpha: 0.20),
@@ -1000,13 +1001,21 @@ class _TrailerRow extends StatelessWidget {
                     width: 84,
                     height: 64,
                     color: theme.colors.muted.withValues(alpha: 0.20),
-                    child: trailer.image.trim().isEmpty
-                        ? Icon(Icons.image_not_supported_outlined, color: theme.colors.mutedForeground, size: 22)
-                        : Image.network(
-                            trailer.image,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => Icon(Icons.broken_image_outlined, color: theme.colors.mutedForeground, size: 22),
-                          ),
+                    child: () {
+                      // Prefer the image from the trailerimages table; fall back to Trailers.image
+                      final raw = (resolvedImageUrl ?? '').trim().isNotEmpty
+                          ? resolvedImageUrl!.trim()
+                          : trailer.image.trim();
+                      if (raw.isEmpty) {
+                        return Icon(Icons.image_not_supported_outlined, color: theme.colors.mutedForeground, size: 22);
+                      }
+                      final url = TrailerService.resolveTrailerImageUrl(raw);
+                      return Image.network(
+                        url,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Icon(Icons.broken_image_outlined, color: theme.colors.mutedForeground, size: 22),
+                      );
+                    }(),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1092,10 +1101,11 @@ class _TrailerRow extends StatelessWidget {
 }
 
 class TrailerDetailsDialog extends StatelessWidget {
-  const TrailerDetailsDialog({super.key, required this.trailer});
+  const TrailerDetailsDialog({super.key, required this.trailer, this.resolvedImageUrl});
   final TrailerData trailer;
+  final String? resolvedImageUrl;
 
-  static Future<void> show(BuildContext context, {required TrailerData trailer}) async {
+  static Future<void> show(BuildContext context, {required TrailerData trailer, String? resolvedImageUrl}) async {
     final mq = MediaQuery.of(context);
     final width = mq.size.width;
     final height = mq.size.height;
@@ -1112,7 +1122,7 @@ class TrailerDetailsDialog extends StatelessWidget {
               padding: const EdgeInsets.all(12),
               child: FractionallySizedBox(
                 heightFactor: 0.92,
-                child: _DialogSurface(child: TrailerDetailsDialog(trailer: trailer)),
+                child: _DialogSurface(child: TrailerDetailsDialog(trailer: trailer, resolvedImageUrl: resolvedImageUrl)),
               ),
             ),
           );
@@ -1132,7 +1142,7 @@ class TrailerDetailsDialog extends StatelessWidget {
           insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
-            child: _DialogSurface(child: TrailerDetailsDialog(trailer: trailer)),
+            child: _DialogSurface(child: TrailerDetailsDialog(trailer: trailer, resolvedImageUrl: resolvedImageUrl)),
           ),
         );
       },
@@ -1238,23 +1248,30 @@ class TrailerDetailsDialog extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                     child: AspectRatio(
                       aspectRatio: 16 / 9,
-                      child: trailer.image.trim().isEmpty
-                          ? Container(
+                      child: () {
+                        final raw = (resolvedImageUrl ?? '').trim().isNotEmpty
+                            ? resolvedImageUrl!.trim()
+                            : trailer.image.trim();
+                        if (raw.isEmpty) {
+                          return Container(
+                            color: theme.colors.muted.withValues(alpha: 0.35),
+                            alignment: Alignment.center,
+                            child: Text('No image', style: theme.typography.sm.copyWith(color: theme.colors.mutedForeground, fontWeight: FontWeight.w800)),
+                          );
+                        }
+                        final url = TrailerService.resolveTrailerImageUrl(raw);
+                        return Image.network(
+                          url,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
                               color: theme.colors.muted.withValues(alpha: 0.35),
                               alignment: Alignment.center,
-                              child: Text('No image', style: theme.typography.sm.copyWith(color: theme.colors.mutedForeground, fontWeight: FontWeight.w800)),
-                            )
-                          : Image.network(
-                              trailer.image,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Container(
-                                  color: theme.colors.muted.withValues(alpha: 0.35),
-                                  alignment: Alignment.center,
-                                  child: Text('Could not load image', style: theme.typography.sm.copyWith(color: theme.colors.mutedForeground)),
-                                );
-                              },
-                            ),
+                              child: Text('Could not load image', style: theme.typography.sm.copyWith(color: theme.colors.mutedForeground)),
+                            );
+                          },
+                        );
+                      }(),
                     ),
                   ),
                 ),
