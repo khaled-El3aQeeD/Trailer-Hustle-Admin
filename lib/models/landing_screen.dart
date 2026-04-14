@@ -26,11 +26,18 @@ class LandingScreen {
       keywords: ['notification', 'alert', 'update', 'announce', 'news'],
     ),
     LandingScreen(
-      notificationType: '5',
-      label: 'Giveaways',
+      notificationType: '13',
+      label: 'Giveaways (Upcoming)',
       icon: Icons.card_giftcard_outlined,
-      hint: 'Users will land on the Giveaways tab',
-      keywords: ['giveaway', 'raffle', 'winner', 'prize', 'sweepstake'],
+      hint: 'Users will land on the Upcoming giveaways tab',
+      keywords: ['giveaway', 'raffle', 'prize', 'sweepstake', 'new giveaway'],
+    ),
+    LandingScreen(
+      notificationType: '5',
+      label: 'Giveaways (Past)',
+      icon: Icons.history_outlined,
+      hint: 'Users will land on the Past giveaways tab',
+      keywords: ['winner', 'won', 'congrat', 'past'],
     ),
     LandingScreen(
       notificationType: '9',
