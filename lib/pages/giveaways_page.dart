@@ -361,7 +361,26 @@ class _GiveawaysTable extends StatelessWidget {
     return g.isDueForArchive(now) ? 'Archived' : 'Active';
   }
 
-  DataRow _rowFor(BuildContext context, Giveaway g) {
+  // Column indices: 0=Title, 1=Status, 2=Entrants, 3=Winner, 4=Archive, 5=Giveaway ID, 6=Actions
+  static const _allColumnLabels = ['Title', 'Status', 'Entrants', 'Winner', 'Archive', 'Giveaway ID', 'Actions'];
+
+  /// Returns column indices to display based on available width.
+  Set<int> _visibleColumns(double width) {
+    final base = <int>{0, 1, 2, 3, 4, 5, 6};
+    if (width < 600) {
+      // Minimal: Title, Status, Actions
+      base.removeAll({2, 3, 4, 5});
+    } else if (width < 800) {
+      // Compact: drop Winner, Giveaway ID
+      base.removeAll({3, 5});
+    } else if (width < 1000) {
+      // Medium: drop Giveaway ID
+      base.remove(5);
+    }
+    return base;
+  }
+
+  DataRow _rowFor(BuildContext context, Giveaway g, Set<int> visible) {
     final status = _statusFor(g);
     final winnerLabel = () {
       final id = g.winnerUserId;
@@ -377,68 +396,99 @@ class _GiveawaysTable extends StatelessWidget {
         .bodyMedium
         ?.copyWith(color: muted ? context.theme.colors.mutedForeground : context.theme.colors.foreground);
 
-    return DataRow(
-      onSelectChanged: (_) => onViewGiveaway(g),
-      cells: [
-        DataCell(
-          ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 280, maxWidth: 420),
-            child: Text(g.title, style: cellStyle(), maxLines: 2, overflow: TextOverflow.ellipsis),
-          ),
+    final allCells = [
+      // 0: Title
+      DataCell(
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 300),
+          child: Text(g.title, style: cellStyle(), maxLines: 2, overflow: TextOverflow.ellipsis),
         ),
-        DataCell(
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: (isPast ? context.theme.colors.muted : context.theme.colors.secondary).withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: context.theme.colors.border.withValues(alpha: 0.7)),
+      ),
+      // 1: Status
+      DataCell(
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: (isPast ? context.theme.colors.muted : context.theme.colors.secondary).withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: context.theme.colors.border.withValues(alpha: 0.7)),
+          ),
+          child: Text(status, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: context.theme.colors.foreground)),
+        ),
+      ),
+      // 2: Entrants
+      DataCell(Text('${g.participants.length}', style: cellStyle(muted: true))),
+      // 3: Winner
+      DataCell(
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 180),
+          child: Text(winnerLabel, style: cellStyle(muted: true), overflow: TextOverflow.ellipsis),
+        ),
+      ),
+      // 4: Archive
+      DataCell(Text(_formatDate(g.scheduledArchiveAt), style: cellStyle(muted: true))),
+      // 5: Giveaway ID
+      DataCell(
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 160),
+          child: Text(g.id, style: cellStyle(muted: true), overflow: TextOverflow.ellipsis),
+        ),
+      ),
+      // 6: Actions
+      DataCell(
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: 'View giveaway',
+              onPressed: () => onViewGiveaway(g),
+              icon: Icon(Icons.card_giftcard, size: 18, color: context.theme.colors.foreground),
+              style: IconButton.styleFrom(
+                backgroundColor: context.theme.colors.muted.withValues(alpha: 0.25),
+                padding: const EdgeInsets.all(8),
+              ),
             ),
-            child: Text(status, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: context.theme.colors.foreground)),
-          ),
-        ),
-        DataCell(Text('${g.participants.length}', style: cellStyle(muted: true))),
-        DataCell(
-          ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 160, maxWidth: 220),
-            child: Text(winnerLabel, style: cellStyle(muted: true), overflow: TextOverflow.ellipsis),
-          ),
-        ),
-        DataCell(Text(_formatDate(g.scheduledArchiveAt), style: cellStyle(muted: true))),
-        DataCell(
-          ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 180),
-            child: Text(g.id, style: cellStyle(muted: true), overflow: TextOverflow.ellipsis),
-          ),
-        ),
-        DataCell(
-          ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 420),
-            child: Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: () => onViewParticipants(g),
-                  icon: Icon(Icons.group_outlined, size: 18, color: context.foreground),
-                  label: Text('View participants', style: TextStyle(color: context.foreground)),
+            const SizedBox(width: 4),
+            PopupMenuButton<String>(
+              tooltip: 'More actions',
+              icon: Icon(Icons.more_vert, size: 18, color: context.theme.colors.foreground),
+              onSelected: (value) {
+                switch (value) {
+                  case 'participants':
+                    onViewParticipants(g);
+                  case 'duplicate':
+                    onDuplicate(g);
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'participants',
+                  child: ListTile(
+                    dense: true,
+                    leading: Icon(Icons.group_outlined, size: 18),
+                    title: Text('View participants'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ),
-                FilledButton.icon(
-                  onPressed: () => onViewGiveaway(g),
-                  icon: Icon(Icons.card_giftcard, size: 18, color: Theme.of(context).colorScheme.onPrimary),
-                  label: Text('View giveaway', style: TextStyle(color: Theme.of(context).colorScheme.onPrimary)),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => onDuplicate(g),
-                  icon: Icon(Icons.copy_outlined, size: 18, color: context.foreground),
-                  label: Text('Duplicate', style: TextStyle(color: context.foreground)),
+                const PopupMenuItem(
+                  value: 'duplicate',
+                  child: ListTile(
+                    dense: true,
+                    leading: Icon(Icons.copy_outlined, size: 18),
+                    title: Text('Duplicate'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ),
               ],
             ),
-          ),
+          ],
         ),
-      ],
+      ),
+    ];
+
+    return DataRow(
+      onSelectChanged: (_) => onViewGiveaway(g),
+      cells: [for (int i = 0; i < allCells.length; i++) if (visible.contains(i)) allCells[i]],
     );
   }
 
@@ -505,28 +555,21 @@ class _GiveawaysTable extends StatelessWidget {
                       headingRowHeight: 46,
                     ),
                   ),
-                  child: Scrollbar(
-                    thumbVisibility: true,
-                    scrollbarOrientation: ScrollbarOrientation.bottom,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: 900),
-                        child: DataTable(
-                          showCheckboxColumn: false,
-                          columns: const [
-                            DataColumn(label: Text('Title')),
-                            DataColumn(label: Text('Status')),
-                            DataColumn(numeric: true, label: Text('Entrants')),
-                            DataColumn(label: Text('Winner')),
-                            DataColumn(label: Text('Archive')),
-                            DataColumn(label: Text('Giveaway ID')),
-                            DataColumn(label: Text('Actions')),
-                          ],
-                          rows: list.map((g) => _rowFor(context, g)).toList(growable: false),
-                        ),
-                      ),
-                    ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final visible = _visibleColumns(constraints.maxWidth);
+                      return DataTable(
+                        showCheckboxColumn: false,
+                        columns: [
+                          for (int i = 0; i < _allColumnLabels.length; i++)
+                            if (visible.contains(i)) DataColumn(
+                              label: Text(_allColumnLabels[i]),
+                              numeric: i == 2,
+                            ),
+                        ],
+                        rows: list.map((g) => _rowFor(context, g, visible)).toList(growable: false),
+                      );
+                    },
                   ),
                 ),
               ),

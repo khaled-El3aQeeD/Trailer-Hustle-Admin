@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 import 'package:provider/provider.dart';
 import 'package:trailerhustle_admin/core/constants.dart';
+import 'package:trailerhustle_admin/models/landing_screen.dart';
 import 'package:trailerhustle_admin/services/push_notification_service.dart';
 import 'package:trailerhustle_admin/widgets/campaign_history_table.dart';
 import 'package:trailerhustle_admin/widgets/dashboard_header.dart';
@@ -37,11 +38,16 @@ class _SendPushPageState extends State<SendPushPage> {
   // Sending state
   bool _sending = false;
 
+  // Landing screen
+  LandingScreen _selectedLanding = LandingScreen.defaultScreen;
+  bool _manuallyOverridden = false;
+  String? _autoDetectSource;
+
   @override
   void initState() {
     super.initState();
-    _titleController.addListener(() => setState(() {}));
-    _bodyController.addListener(() => setState(() {}));
+    _titleController.addListener(_onComposeChanged);
+    _bodyController.addListener(_onComposeChanged);
 
     _loadData();
   }
@@ -51,6 +57,49 @@ class _SendPushPageState extends State<SendPushPage> {
     _titleController.dispose();
     _bodyController.dispose();
     super.dispose();
+  }
+
+  void _onComposeChanged() {
+    if (!_manuallyOverridden) {
+      _runAutoDetect();
+    }
+    setState(() {});
+  }
+
+  void _runAutoDetect() {
+    final title = _titleController.text;
+    final body = _bodyController.text;
+    final detected = LandingScreen.detectFromContent(title, body);
+
+    // Figure out which field triggered the match for the hint text
+    if (detected != LandingScreen.defaultScreen) {
+      final titleLower = title.toLowerCase();
+      String? matchedKeyword;
+      bool inTitle = false;
+      for (final kw in detected.keywords) {
+        if (titleLower.contains(kw)) {
+          matchedKeyword = kw.toUpperCase();
+          inTitle = true;
+          break;
+        }
+      }
+      if (matchedKeyword == null) {
+        final bodyLower = body.toLowerCase();
+        for (final kw in detected.keywords) {
+          if (bodyLower.contains(kw)) {
+            matchedKeyword = kw.toUpperCase();
+            break;
+          }
+        }
+      }
+      _autoDetectSource = matchedKeyword != null
+          ? 'Auto-detected from "$matchedKeyword" in ${inTitle ? 'title' : 'body'}'
+          : null;
+    } else {
+      _autoDetectSource = null;
+    }
+
+    _selectedLanding = detected;
   }
 
   Future<void> _loadData() async {
@@ -138,6 +187,10 @@ class _SendPushPageState extends State<SendPushPage> {
                     label: 'Recipients', value: '$count users'),
                 const SizedBox(height: 8),
                 _ConfirmRow(label: 'Filters', value: _filterSummary),
+                const SizedBox(height: 8),
+                _ConfirmRow(
+                    label: 'Landing',
+                    value: '${_selectedLanding.label} — ${_selectedLanding.hint}'),
                 const SizedBox(height: 16),
                 Container(
                   width: double.infinity,
@@ -182,6 +235,7 @@ class _SendPushPageState extends State<SendPushPage> {
       userIds: _selectedIds.toList(),
       sendToAll: sendAll,
       filterSummary: _filterSummary,
+      notificationType: _selectedLanding.notificationType,
     );
 
     if (!mounted) return;
@@ -191,7 +245,12 @@ class _SendPushPageState extends State<SendPushPage> {
     if (result.success) {
       _titleController.clear();
       _bodyController.clear();
-      setState(() => _selectedIds = {});
+      setState(() {
+        _selectedIds = {};
+        _selectedLanding = LandingScreen.defaultScreen;
+        _manuallyOverridden = false;
+        _autoDetectSource = null;
+      });
 
       // Refresh campaigns
       PushNotificationService.fetchCampaigns().then((c) {
@@ -372,6 +431,9 @@ class _SendPushPageState extends State<SendPushPage> {
             ),
           ),
         ),
+        const SizedBox(height: 16),
+        // Landing screen dropdown
+        _buildLandingScreenDropdown(),
       ],
     );
 
@@ -397,6 +459,117 @@ class _SendPushPageState extends State<SendPushPage> {
         NotificationPreviewCard(
           title: _titleController.text,
           body: _bodyController.text,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLandingScreenDropdown() {
+    final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.ads_click, size: 18, color: colors.primary),
+            const SizedBox(width: 6),
+            Text(
+              'Landing Screen',
+              style: textTheme.labelLarge
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          value: _selectedLanding.notificationType,
+          decoration: InputDecoration(
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 14,
+            ),
+          ),
+          items: LandingScreen.all.map((screen) {
+            return DropdownMenuItem<String>(
+              value: screen.notificationType,
+              child: Row(
+                children: [
+                  Icon(screen.icon, size: 18,
+                      color: colors.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Text(screen.label),
+                ],
+              ),
+            );
+          }).toList(),
+          onChanged: (value) {
+            if (value == null) return;
+            final screen = LandingScreen.fromType(value);
+            if (screen == null) return;
+            setState(() {
+              _selectedLanding = screen;
+              _manuallyOverridden = true;
+              _autoDetectSource = null;
+            });
+          },
+        ),
+        const SizedBox(height: 6),
+        // Hint text
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              _autoDetectSource != null
+                  ? Icons.auto_awesome
+                  : Icons.info_outline,
+              size: 14,
+              color: _autoDetectSource != null
+                  ? colors.primary
+                  : colors.onSurfaceVariant,
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                _autoDetectSource != null
+                    ? '$_autoDetectSource. ${_selectedLanding.hint}.'
+                    : _manuallyOverridden
+                        ? _selectedLanding.hint
+                        : 'No keyword detected — defaulting to Notifications. ${_selectedLanding.hint}.',
+                style: textTheme.bodySmall?.copyWith(
+                  color: _autoDetectSource != null
+                      ? colors.primary
+                      : colors.onSurfaceVariant,
+                  fontStyle: _autoDetectSource != null
+                      ? FontStyle.italic
+                      : FontStyle.normal,
+                ),
+              ),
+            ),
+            if (_manuallyOverridden)
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _manuallyOverridden = false;
+                    _runAutoDetect();
+                  });
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 4),
+                  child: Text(
+                    'Reset',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colors.primary,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ],
     );

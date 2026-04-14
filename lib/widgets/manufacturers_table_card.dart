@@ -457,22 +457,15 @@ class _BrandsTable extends StatelessWidget {
             headingRowHeight: 46,
           ),
         ),
-        child: Scrollbar(
-          thumbVisibility: true,
-          scrollbarOrientation: ScrollbarOrientation.bottom,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 700),
-              child: DataTable(
-                showCheckboxColumn: false,
-                columns: const [
-                  DataColumn(label: Text('ID')),
-                  DataColumn(label: Text('Manufacturer')),
-                  DataColumn(label: Text('Published')),
-                  DataColumn(label: Text('Updated')),
-                  DataColumn(label: Text('')),
-                ],
+        child: DataTable(
+            showCheckboxColumn: false,
+            columns: const [
+              DataColumn(label: Text('ID')),
+              DataColumn(label: Text('Manufacturer')),
+              DataColumn(label: Text('Published')),
+              DataColumn(label: Text('Updated')),
+              DataColumn(label: Text('')),
+            ],
                 rows: brands.map((b) {
                   final busy = updatingIds.contains(b.id);
                   final actionLabel = actionLabelFor(b);
@@ -481,7 +474,7 @@ class _BrandsTable extends StatelessWidget {
                       DataCell(Text('#${b.id}', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: theme.colors.mutedForeground))),
                       DataCell(
                         ConstrainedBox(
-                          constraints: const BoxConstraints(minWidth: 200, maxWidth: 400),
+                          constraints: const BoxConstraints(maxWidth: 400),
                           child: Text(b.title.trim().isEmpty ? '—' : b.title.trim(), maxLines: 1, overflow: TextOverflow.ellipsis),
                         ),
                       ),
@@ -502,9 +495,6 @@ class _BrandsTable extends StatelessWidget {
                     ],
                   );
                 }).toList(growable: false),
-              ),
-            ),
-          ),
         ),
       ),
     );

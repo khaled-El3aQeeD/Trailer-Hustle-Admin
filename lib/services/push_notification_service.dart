@@ -6,6 +6,7 @@ class PushCampaign {
   final String title;
   final String body;
   final String? filterSummary;
+  final String? notificationType;
   final int totalTargets;
   final int totalSent;
   final int totalFailed;
@@ -18,6 +19,7 @@ class PushCampaign {
     required this.title,
     required this.body,
     this.filterSummary,
+    this.notificationType,
     required this.totalTargets,
     required this.totalSent,
     required this.totalFailed,
@@ -32,6 +34,7 @@ class PushCampaign {
       title: (json['title'] ?? '').toString(),
       body: (json['body'] ?? '').toString(),
       filterSummary: json['filter_summary']?.toString(),
+      notificationType: json['notification_type']?.toString(),
       totalTargets: (json['total_targets'] as int?) ?? 0,
       totalSent: (json['total_sent'] as int?) ?? 0,
       totalFailed: (json['total_failed'] as int?) ?? 0,
@@ -71,6 +74,7 @@ class PushNotificationService {
     required List<int> userIds,
     required bool sendToAll,
     String? filterSummary,
+    String notificationType = '4',
   }) async {
     try {
       final response = await SupabaseConfig.client.functions.invoke(
@@ -81,6 +85,7 @@ class PushNotificationService {
           'user_ids': userIds,
           'send_to_all': sendToAll,
           'filter_summary': filterSummary,
+          'notification_type': notificationType,
         },
       );
 

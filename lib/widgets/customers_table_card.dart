@@ -320,7 +320,27 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
   }
 
   // Column indices for responsive visibility.
-  static const _columnLabels = ['ID', 'Business', 'Email', 'Login Method', 'Category Type', 'Created on Date', 'Trailers', 'Tier', 'Status', 'Actions'];
+  static const _columnLabels = ['ID', 'Business', 'Contact', 'Login Method', 'Category Type', 'Created on Date', 'Trailers', 'Tier', 'Status', 'Actions'];
+
+  /// Returns the contact value to display for a user depending on the active
+  /// login-method filter. When "Phone" is selected (filter 2) the mobile number
+  /// is shown; otherwise the email address is preferred with a phone fallback.
+  String _contactValue(UserData u) {
+    if (_loginMethodFilter == 2) {
+      return u.phone.trim().isEmpty ? '—' : u.phone.trim();
+    }
+    if (u.email.trim().isNotEmpty) return u.email.trim();
+    if (u.phone.trim().isNotEmpty) return u.phone.trim();
+    return '—';
+  }
+
+  /// Returns the icon that matches the contact type currently displayed.
+  IconData _contactIcon(UserData u) {
+    if (_loginMethodFilter == 2) return Icons.phone_outlined;
+    if (u.email.trim().isNotEmpty) return Icons.email_outlined;
+    if (u.phone.trim().isNotEmpty) return Icons.phone_outlined;
+    return Icons.email_outlined;
+  }
 
   /// Returns column indices to display based on available width.
   static Set<int> _visibleColumns(double width) {
@@ -342,7 +362,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
     final allCells = [
         DataCell(
           ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 120, maxWidth: 160),
+            constraints: const BoxConstraints(maxWidth: 160),
             child: Row(
               children: [
                 Expanded(
@@ -416,8 +436,21 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
         ),
         DataCell(
           ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 220, maxWidth: 280),
-            child: Text(u.email.isEmpty ? '—' : u.email, style: cellStyle(muted: true), overflow: TextOverflow.ellipsis),
+            constraints: const BoxConstraints(maxWidth: 280),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(_contactIcon(u), size: 13, color: theme.colors.mutedForeground),
+                const SizedBox(width: 5),
+                Flexible(
+                  child: Text(
+                    _contactValue(u),
+                    style: cellStyle(muted: true),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         DataCell(
@@ -439,7 +472,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
         ),
         DataCell(
           ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 170, maxWidth: 220),
+            constraints: const BoxConstraints(maxWidth: 220),
             child: Text(
               u.categoryType.trim().isEmpty ? '—' : u.categoryType.trim(),
               style: cellStyle(muted: true),
@@ -535,7 +568,7 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 260, maxWidth: 360),
+                  constraints: const BoxConstraints(maxWidth: 360),
                   child: TextField(
                     controller: _search,
                     decoration: const InputDecoration(
@@ -810,24 +843,13 @@ class _CustomersTableCardState extends State<CustomersTableCard> {
                       child: LayoutBuilder(
                         builder: (context, constraints) {
                           final visible = _visibleColumns(constraints.maxWidth);
-                          final minW = visible.length >= 10 ? 1200.0 : visible.length >= 7 ? 800.0 : 600.0;
-                          return Scrollbar(
-                            thumbVisibility: true,
-                            scrollbarOrientation: ScrollbarOrientation.bottom,
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(minWidth: minW),
-                                child: DataTable(
-                                  showCheckboxColumn: false,
-                                  columns: [
-                                    for (int i = 0; i < _columnLabels.length; i++)
-                                      if (visible.contains(i)) DataColumn(label: Text(_columnLabels[i])),
-                                  ],
-                                  rows: pageItems.map((u) => _rowFor(context, u, visible)).toList(growable: false),
-                                ),
-                              ),
-                            ),
+                          return DataTable(
+                            showCheckboxColumn: false,
+                            columns: [
+                              for (int i = 0; i < _columnLabels.length; i++)
+                                if (visible.contains(i)) DataColumn(label: Text(_columnLabels[i])),
+                            ],
+                            rows: pageItems.map((u) => _rowFor(context, u, visible)).toList(growable: false),
                           );
                         },
                       ),

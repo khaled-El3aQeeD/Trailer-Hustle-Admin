@@ -513,24 +513,13 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
                       child: LayoutBuilder(
                         builder: (context, constraints) {
                           final visible = _visibleColumns(constraints.maxWidth);
-                          final minW = visible.length >= 10 ? 1100.0 : visible.length >= 8 ? 900.0 : visible.length >= 6 ? 700.0 : 500.0;
-                          return Scrollbar(
-                            thumbVisibility: true,
-                            scrollbarOrientation: ScrollbarOrientation.bottom,
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(minWidth: minW),
-                                child: DataTable(
-                                  showCheckboxColumn: false,
-                                  columns: [
-                                    for (int i = 0; i < _columnLabels.length; i++)
-                                      if (visible.contains(i)) DataColumn(label: Text(_columnLabels[i])),
-                                  ],
-                                  rows: pageItems.map((t) => _rowFor(context, t, visible)).toList(growable: false),
-                                ),
-                              ),
-                            ),
+                          return DataTable(
+                            showCheckboxColumn: false,
+                            columns: [
+                              for (int i = 0; i < _columnLabels.length; i++)
+                                if (visible.contains(i)) DataColumn(label: Text(_columnLabels[i])),
+                            ],
+                            rows: pageItems.map((t) => _rowFor(context, t, visible)).toList(growable: false),
                           );
                         },
                       ),
@@ -562,12 +551,24 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
 
   /// Returns column indices to display based on available width and mode.
   Set<int> _visibleColumns(double width) {
+    // 0=ID, 1=Trailer, 2=Business, 3=Make, 4=Date submitted, 5=Category, 6=Model, 7=Status, 8=Ratings, 9=Actions
     final base = <int>{0, 1, 2, 3, 5, 6, 7, 8, 9};
     if (widget.mode == TrailersTableMode.submittedForApproval) base.add(4);
-    if (width < 800) {
-      base.removeAll({0, 3, 5, 6, 8}); // keep Trailer, Business, Status, Actions (+ Date if approval)
+    if (width < 600) {
+      // Minimal: Trailer, Status, Actions
+      base.removeAll({0, 2, 3, 4, 5, 6, 8});
+    } else if (width < 800) {
+      // Compact: Trailer, Business, Status, Actions (+ Date if approval)
+      base.removeAll({0, 3, 5, 6, 8});
     } else if (width < 1000) {
-      base.removeAll({3, 6}); // hide Make, Model
+      // Medium: drop Make, Model, Ratings
+      base.removeAll({3, 6, 8});
+    } else if (width < 1200) {
+      // Wider: drop Make, Model
+      base.removeAll({3, 6});
+    } else if (width < 1400) {
+      // Large: drop Model only
+      base.remove(6);
     }
     return base;
   }
@@ -608,7 +609,7 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
         ),
         DataCell(
           ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 220, maxWidth: 320),
+            constraints: const BoxConstraints(maxWidth: 220),
             child: Text(_businessNameFor(t), style: cellStyle(muted: true), maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
         ),
@@ -617,20 +618,20 @@ class _TrailersTableCardState extends State<TrailersTableCard> {
         // 4: Date submitted (always built; visibility controlled by _visibleColumns)
         DataCell(
           ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 160, maxWidth: 200),
+            constraints: const BoxConstraints(maxWidth: 180),
             child: Text(_submittedDateText(context, t), style: cellStyle(muted: true), maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
         ),
         // 5: Category
         DataCell(
           ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 180, maxWidth: 260),
+            constraints: const BoxConstraints(maxWidth: 200),
             child: Text(_categoryText(t), style: cellStyle(muted: true), maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
         ),
         DataCell(
           ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 180, maxWidth: 260),
+            constraints: const BoxConstraints(maxWidth: 200),
             child: Text(_modelText(t), style: cellStyle(muted: true), maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
         ),

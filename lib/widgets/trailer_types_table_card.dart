@@ -240,7 +240,7 @@ class _TrailerTypesTableCardState extends State<TrailerTypesTableCard> {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 260, maxWidth: 360),
+                  constraints: const BoxConstraints(maxWidth: 360),
                   child: TextField(
                     controller: _search,
                     decoration: const InputDecoration(labelText: 'Search', hintText: 'Title or ID…', prefixIcon: Icon(Icons.search_outlined)),
@@ -278,26 +278,16 @@ class _TrailerTypesTableCardState extends State<TrailerTypesTableCard> {
                       headingRowHeight: 46,
                     ),
                   ),
-                  child: Scrollbar(
-                    thumbVisibility: true,
-                    scrollbarOrientation: ScrollbarOrientation.bottom,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(minWidth: 700),
-                        child: DataTable(
-                          showCheckboxColumn: false,
-                          columns: const [
-                            DataColumn(label: Text('ID')),
-                            DataColumn(label: Text('Title')),
-                            DataColumn(label: Text('Published')),
-                            DataColumn(label: Text('Updated')),
-                            DataColumn(label: Text('Actions')),
-                          ],
-                          rows: filtered.map((t) => _rowFor(context, t)).toList(growable: false),
-                        ),
-                      ),
-                    ),
+                  child: DataTable(
+                    showCheckboxColumn: false,
+                    columns: const [
+                      DataColumn(label: Text('ID')),
+                      DataColumn(label: Text('Title')),
+                      DataColumn(label: Text('Published')),
+                      DataColumn(label: Text('Updated')),
+                      DataColumn(label: Text('Actions')),
+                    ],
+                    rows: filtered.map((t) => _rowFor(context, t)).toList(growable: false),
                   ),
                 ),
               ),
@@ -316,7 +306,7 @@ class _TrailerTypesTableCardState extends State<TrailerTypesTableCard> {
         DataCell(Text('#${t.id}', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: theme.colors.mutedForeground))),
         DataCell(
           ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 260, maxWidth: 520),
+            constraints: const BoxConstraints(maxWidth: 520),
             child: Text(t.title.trim().isEmpty ? '—' : t.title.trim(), maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
         ),

@@ -183,13 +183,7 @@ class _TrailersTabScroll extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1400),
-          child: child,
-        ),
-      ),
+      child: child,
     );
   }
 }

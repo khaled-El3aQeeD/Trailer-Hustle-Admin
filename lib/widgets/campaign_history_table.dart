@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:trailerhustle_admin/models/landing_screen.dart';
 import 'package:trailerhustle_admin/services/push_notification_service.dart';
 
 /// Displays recent push campaigns in a compact table.
@@ -37,10 +38,7 @@ class CampaignHistoryTable extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 700),
-            child: DataTable(
+          child: DataTable(
               headingRowHeight: 40,
               dataRowMinHeight: 38,
               dataRowMaxHeight: 40,
@@ -57,6 +55,11 @@ class CampaignHistoryTable extends StatelessWidget {
                 ),
                 DataColumn(
                   label: Text('Title',
+                      style: textTheme.labelSmall
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                ),
+                DataColumn(
+                  label: Text('Landing',
                       style: textTheme.labelSmall
                           ?.copyWith(fontWeight: FontWeight.bold)),
                 ),
@@ -100,6 +103,23 @@ class CampaignHistoryTable extends StatelessWidget {
                       ),
                     ),
                   ),
+                  DataCell(() {
+                    final screen = c.notificationType != null
+                        ? LandingScreen.fromType(c.notificationType!)
+                        : null;
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(screen?.icon ?? Icons.notifications_outlined,
+                            size: 14, color: colors.onSurfaceVariant),
+                        const SizedBox(width: 4),
+                        Text(
+                          screen?.label ?? 'Notifications',
+                          style: textTheme.bodySmall,
+                        ),
+                      ],
+                    );
+                  }()),
                   DataCell(Text(
                     c.filterSummary ?? '—',
                     style: textTheme.bodySmall
@@ -125,7 +145,6 @@ class CampaignHistoryTable extends StatelessWidget {
                   DataCell(_StatusBadge(status: c.status)),
                 ]);
               }).toList(),
-            ),
           ),
         ),
       ),
