@@ -10,6 +10,7 @@ enum AppRoute {
   trailersAll,
   trailerTypesEdit,
   manufacturersEdit,
+  stolenTrailers,
   notifications,
   sendPush,
   customerProfile,

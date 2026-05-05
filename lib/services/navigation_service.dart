@@ -63,6 +63,12 @@ class NavigationService {
         ],
       ),
       NavigationItem(
+        title: 'Stolen Trailers',
+        icon: Icons.warning_amber_outlined,
+        url: '/stolen-trailers',
+        isActive: activeUrl == '/stolen-trailers',
+      ),
+      NavigationItem(
         title: 'Notifications',
         icon: Icons.notifications_none_outlined,
         url: '/notifications',

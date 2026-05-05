@@ -264,6 +264,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
         label: 'Reported Chats',
         count: _summaryTypeCounts[13] ?? 0,
       ),
+      _SummaryTile(
+        icon: Icons.warning_amber_outlined,
+        iconColor: Colors.deepOrange,
+        label: 'Stolen Trailers',
+        count: _summaryTypeCounts[14] ?? 0,
+      ),
     ];
 
     return LayoutBuilder(
@@ -330,6 +336,12 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 selected: _selectedTypeFilter == 13,
                 onTap: () => _onFilterChanged(13),
                 dotColor: Colors.red,
+              ),
+              _FilterChip(
+                label: 'Stolen Trailers',
+                selected: _selectedTypeFilter == 14,
+                onTap: () => _onFilterChanged(14),
+                dotColor: Colors.deepOrange,
               ),
             ],
           ),
@@ -569,6 +581,7 @@ class _NotificationTile extends StatelessWidget {
         11 => Colors.green,
         8 => Colors.purple,
         13 => Colors.red,
+        14 => Colors.deepOrange,
         _ => Colors.grey,
       };
 
@@ -577,6 +590,7 @@ class _NotificationTile extends StatelessWidget {
         11 => Icons.mail_outline,
         8 => Icons.handshake_outlined,
         13 => Icons.report_outlined,
+        14 => Icons.warning_amber_outlined,
         _ => Icons.notifications_outlined,
       };
 

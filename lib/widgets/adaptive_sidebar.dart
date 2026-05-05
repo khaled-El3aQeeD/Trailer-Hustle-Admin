@@ -55,6 +55,9 @@ class _CollapsedSidebar extends StatelessWidget {
       case '/trailers/all':
         nav.go(AppRoute.trailersAll);
         break;
+      case '/stolen-trailers':
+        nav.go(AppRoute.stolenTrailers);
+        break;
       case '/notifications':
         nav.go(AppRoute.notifications);
         break;
@@ -79,6 +82,7 @@ class _CollapsedSidebar extends StatelessWidget {
       AppRoute.trailersAll => '/trailers/all',
       AppRoute.trailerTypesEdit => '/trailers/types',
       AppRoute.manufacturersEdit => '/trailers/manufacturers',
+      AppRoute.stolenTrailers => '/stolen-trailers',
       AppRoute.notifications => '/notifications',
       AppRoute.sendPush => '/send-push',
       AppRoute.customerProfile => '/dashboard',

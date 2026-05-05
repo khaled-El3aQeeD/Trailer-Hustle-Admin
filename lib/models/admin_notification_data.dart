@@ -5,6 +5,7 @@
 /// - 10 = New Trailer Make Added
 /// - 11 = Contact Us Submission
 /// - 13 = Reported Chat
+/// - 14 = Stolen Trailer Report
 class AdminNotificationData {
   final int id;
   final int userId;
@@ -46,6 +47,7 @@ class AdminNotificationData {
         10 => 'New Trailer Make',
         11 => 'Contact Us',
         13 => 'Reported Chat',
+        14 => 'Stolen Trailer',
         _ => 'Notification',
       };
 
@@ -100,6 +102,6 @@ class AdminNotificationData {
         updatedAt: DateTime.now(),
       );
 
-  /// The 4 notification types tracked by the admin dashboard.
-  static const List<int> trackedTypes = [8, 10, 11, 13];
+  /// The notification types tracked by the admin dashboard.
+  static const List<int> trackedTypes = [8, 10, 11, 13, 14];
 }

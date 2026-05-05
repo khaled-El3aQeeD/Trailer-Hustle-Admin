@@ -8,6 +8,7 @@ import 'package:trailerhustle_admin/pages/giveaways_page.dart';
 import 'package:trailerhustle_admin/pages/promotions_page.dart';
 import 'package:trailerhustle_admin/pages/trailers_page.dart';
 import 'package:trailerhustle_admin/pages/notifications_page.dart';
+import 'package:trailerhustle_admin/pages/stolen_trailers_page.dart';
 import 'package:trailerhustle_admin/pages/send_push_page.dart';
 import 'package:trailerhustle_admin/pages/user_profile_page.dart';
 import 'package:trailerhustle_admin/services/app_navigation_controller.dart';
@@ -151,6 +152,7 @@ class _AdminRoot extends StatelessWidget {
         AppRoute.trailersAll => const TrailersPage(key: ValueKey('trailers_all'), initialTabIndex: 3),
         AppRoute.trailerTypesEdit => const TrailersPage(key: ValueKey('trailer_types_edit'), initialTabIndex: 0),
         AppRoute.manufacturersEdit => const TrailersPage(key: ValueKey('manufacturers_edit'), initialTabIndex: 1),
+        AppRoute.stolenTrailers => const StolenTrailersPage(key: ValueKey('stolen_trailers')),
         AppRoute.notifications => const NotificationsPage(key: ValueKey('notifications')),
         AppRoute.sendPush => const SendPushPage(key: ValueKey('send_push')),
         AppRoute.customerProfile => () {
