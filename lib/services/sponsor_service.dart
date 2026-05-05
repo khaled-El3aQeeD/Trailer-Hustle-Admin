@@ -53,7 +53,8 @@ class SponsorService {
           .from(_table)
           .select('*')
           .not('display_name', 'is', null)
-          .neq('display_name', '');
+          .neq('display_name', '')
+          .isFilter('deletedAt', null);
 
       final trimmed = query.trim();
       if (trimmed.isNotEmpty) {

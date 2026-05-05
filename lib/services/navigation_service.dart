@@ -25,6 +25,12 @@ class NavigationService {
         isActive: activeUrl == '/giveaways',
       ),
       NavigationItem(
+        title: 'Promotions',
+        icon: Icons.campaign,
+        url: '/promotions',
+        isActive: activeUrl == '/promotions',
+      ),
+      NavigationItem(
         title: 'Trailers',
         icon: Icons.local_movies_outlined,
         url: '/trailers',

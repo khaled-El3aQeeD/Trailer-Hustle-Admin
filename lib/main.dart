@@ -5,6 +5,7 @@ import 'theme/theme_provider.dart';
 import 'theme.dart';
 import 'pages/dashboard_page.dart';
 import 'package:trailerhustle_admin/pages/giveaways_page.dart';
+import 'package:trailerhustle_admin/pages/promotions_page.dart';
 import 'package:trailerhustle_admin/pages/trailers_page.dart';
 import 'package:trailerhustle_admin/pages/notifications_page.dart';
 import 'package:trailerhustle_admin/pages/send_push_page.dart';
@@ -139,6 +140,7 @@ class _AdminRoot extends StatelessWidget {
       child: switch (route) {
         AppRoute.dashboard => const DashboardPage(key: ValueKey('dashboard')),
         AppRoute.giveaways => const GiveawaysPage(key: ValueKey('giveaways')),
+        AppRoute.promotions => const PromotionsPage(key: ValueKey('promotions')),
         AppRoute.trailers => const TrailersPage(key: ValueKey('trailers'), initialTabIndex: 0),
         AppRoute.trailersReview => const TrailersPage(
           key: ValueKey('trailers_review'),

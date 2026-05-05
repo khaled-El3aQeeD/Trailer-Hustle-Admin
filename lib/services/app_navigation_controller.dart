@@ -4,6 +4,7 @@ import 'package:trailerhustle_admin/models/user_data.dart';
 enum AppRoute {
   dashboard,
   giveaways,
+  promotions,
   trailers,
   trailersReview,
   trailersAll,

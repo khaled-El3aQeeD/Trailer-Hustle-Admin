@@ -24,6 +24,9 @@ class Sidebar extends StatelessWidget {
       case '/giveaways':
         nav.go(AppRoute.giveaways);
         break;
+      case '/promotions':
+        nav.go(AppRoute.promotions);
+        break;
       case '/trailers':
         nav.go(AppRoute.trailers);
         break;
@@ -56,6 +59,7 @@ class Sidebar extends StatelessWidget {
     final activeUrl = switch (route) {
       AppRoute.dashboard => '/dashboard',
       AppRoute.giveaways => '/giveaways',
+      AppRoute.promotions => '/promotions',
       AppRoute.trailers => '/trailers',
       AppRoute.trailersReview => '/trailers/review',
       AppRoute.trailersAll => '/trailers/all',
