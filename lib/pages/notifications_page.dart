@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:trailerhustle_admin/core/constants.dart';
 import 'package:trailerhustle_admin/models/admin_notification_data.dart';
+import 'package:trailerhustle_admin/models/user_data.dart';
 import 'package:trailerhustle_admin/services/admin_notification_service.dart';
+import 'package:trailerhustle_admin/services/app_navigation_controller.dart';
+import 'package:trailerhustle_admin/services/user_service.dart';
 import 'package:trailerhustle_admin/supabase/supabase_config.dart';
 import 'package:trailerhustle_admin/theme/theme_provider.dart';
 import 'package:trailerhustle_admin/widgets/dashboard_header.dart';
@@ -37,6 +42,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
   // Real-time
   RealtimeChannel? _realtimeChannel;
+
+  // Submitter enrichment: userId -> 'free' | 'lite' | 'pro'.
+  // Populated after each notifications page loads via a single batch query.
+  final Map<int, String> _tierByUserId = {};
+
+  // Tap-to-profile loading state. Holds the userId currently being fetched
+  // so the corresponding tile can show a spinner and ignore duplicate taps.
+  int? _openingUserId;
 
   @override
   void initState() {
@@ -78,6 +91,10 @@ class _NotificationsPageState extends State<NotificationsPage> {
         _summaryTypeCounts = summary.typeCounts;
         _loading = false;
       });
+
+      // Fire-and-forget — render the page first, then enrich tiles with
+      // subscription tier chips once the batch query resolves.
+      unawaited(_loadTiersForVisible(paginated.items));
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -106,6 +123,51 @@ class _NotificationsPageState extends State<NotificationsPage> {
       _page = 0;
     });
     _fetchData();
+  }
+
+  Future<void> _loadTiersForVisible(List<AdminNotificationData> items) async {
+    final missingIds = <int>{
+      for (final n in items)
+        if (n.userId > 0 && !_tierByUserId.containsKey(n.userId)) n.userId,
+    };
+    if (missingIds.isEmpty) return;
+
+    try {
+      final rows = await SupabaseService.from('Businesses')
+          .select('id, is_subscribed, isSubscribed, subscriptionStatus, '
+              'subscription_status, subscriptionType, subscription_type')
+          .inFilter('id', missingIds.toList());
+
+      if (!mounted) return;
+      setState(() {
+        for (final row in (rows as List)) {
+          final m = row as Map<String, dynamic>;
+          final id = (m['id'] as num?)?.toInt();
+          if (id == null) continue;
+          // Reuse UserData.fromJson's tier parsing rather than duplicating it.
+          _tierByUserId[id] = UserData.fromJson(m).subscriptionTier;
+        }
+      });
+    } catch (_) {
+      // Tier chips are a non-critical enrichment — silently skip on failure.
+    }
+  }
+
+  Future<void> _openProfile(AdminNotificationData n) async {
+    if (n.userId <= 0 || _openingUserId != null) return;
+    setState(() => _openingUserId = n.userId);
+    try {
+      final user = await UserService.fetchCustomerById(n.userId.toString());
+      if (!mounted) return;
+      context.read<AppNavigationController>().goToProfile(user);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open profile: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _openingUserId = null);
+    }
   }
 
   Future<void> _markAllRead() async {
@@ -393,13 +455,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
 
     return Column(
       children: [
-        ..._notifications
-            .map((n) => _NotificationTile(
-                  notification: n,
-                  onMarkRead: () => _markOneRead(n),
-                  onDelete: () => _deleteOne(n),
-                ))
-            .toList(),
+        ..._notifications.map((n) => _NotificationTile(
+              notification: n,
+              subscriptionTier: _tierByUserId[n.userId],
+              isOpening: _openingUserId == n.userId,
+              onTapProfile: n.userId > 0 ? () => _openProfile(n) : null,
+              onMarkRead: () => _markOneRead(n),
+              onDelete: () => _deleteOne(n),
+            )),
         const SizedBox(height: 16),
         _PaginationFooter(
           total: _totalCount,
@@ -567,11 +630,17 @@ class _FilterChip extends StatelessWidget {
 
 class _NotificationTile extends StatelessWidget {
   final AdminNotificationData notification;
+  final String? subscriptionTier;
+  final bool isOpening;
+  final VoidCallback? onTapProfile;
   final VoidCallback onMarkRead;
   final VoidCallback onDelete;
 
   const _NotificationTile({
     required this.notification,
+    required this.subscriptionTier,
+    required this.isOpening,
+    required this.onTapProfile,
     required this.onMarkRead,
     required this.onDelete,
   });
@@ -617,7 +686,7 @@ class _NotificationTile extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
-          onTap: onMarkRead,
+          onTap: onTapProfile,
           child: Padding(
             padding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -679,38 +748,56 @@ class _NotificationTile extends StatelessWidget {
                       const SizedBox(height: 6),
 
                       // Submitter identity — the key info
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          Icon(Icons.person_outline,
-                              size: 14,
-                              color: theme.colors.mutedForeground),
-                          const SizedBox(width: 4),
-                          Flexible(
-                            child: Text(
-                              notification.submitterDisplay,
-                              style: theme.typography.sm.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: theme.colors.foreground,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (notification.email.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            Icon(Icons.email_outlined,
-                                size: 13,
-                                color: theme.colors.mutedForeground),
-                            const SizedBox(width: 3),
-                            Flexible(
-                              child: Text(
-                                notification.email,
-                                style: theme.typography.xs.copyWith(
-                                  color: theme.colors.mutedForeground,
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.person_outline,
+                                  size: 14,
+                                  color: theme.colors.mutedForeground),
+                              const SizedBox(width: 4),
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 220),
+                                child: Text(
+                                  notification.submitterDisplay,
+                                  style: theme.typography.sm.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: theme.colors.foreground,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                overflow: TextOverflow.ellipsis,
                               ),
+                            ],
+                          ),
+                          if (notification.userId > 0)
+                            _UserIdChip(userId: notification.userId),
+                          if (subscriptionTier != null)
+                            _TierChip(tier: subscriptionTier!),
+                          if (notification.email.isNotEmpty)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.email_outlined,
+                                    size: 13,
+                                    color: theme.colors.mutedForeground),
+                                const SizedBox(width: 3),
+                                ConstrainedBox(
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 240),
+                                  child: Text(
+                                    notification.email,
+                                    style: theme.typography.xs.copyWith(
+                                      color: theme.colors.mutedForeground,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -754,6 +841,18 @@ class _NotificationTile extends StatelessWidget {
   }
 
   Widget _buildAvatar(BuildContext context, Color color) {
+    if (isOpening) {
+      return CircleAvatar(
+        radius: 20,
+        backgroundColor: color.withValues(alpha: 0.12),
+        child: SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2, color: color),
+        ),
+      );
+    }
+
     final hasImage = notification.submitterImage != null &&
         notification.submitterImage!.isNotEmpty;
 
@@ -939,6 +1038,62 @@ class _PaginationFooter extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _UserIdChip extends StatelessWidget {
+  final int userId;
+  const _UserIdChip({required this.userId});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: theme.colors.muted.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: theme.colors.border.withValues(alpha: 0.7)),
+      ),
+      child: Text(
+        '#$userId',
+        style: theme.typography.xs.copyWith(
+          fontFeatures: const [FontFeature.tabularFigures()],
+          color: theme.colors.mutedForeground,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _TierChip extends StatelessWidget {
+  final String tier;
+  const _TierChip({required this.tier});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.theme;
+    final color = tier == 'pro'
+        ? const Color(0xFF7C3AED)
+        : tier == 'lite'
+            ? const Color(0xFF2563EB)
+            : const Color(0xFF6B7280);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        tier.toUpperCase(),
+        style: theme.typography.xs.copyWith(
+          color: color,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.4,
+        ),
       ),
     );
   }

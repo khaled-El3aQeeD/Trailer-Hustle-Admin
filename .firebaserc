@@ -1,0 +1,12 @@
+{
+  "projects": {
+    "default": "trailer-hustle"
+  },
+  "targets": {
+    "trailer-hustle": {
+      "hosting": {
+        "admin": ["trailer-hustle-admin"]
+      }
+    }
+  }
+}
