@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:trailerhustle_admin/auth/auth_controller.dart';
 import 'package:trailerhustle_admin/core/constants.dart';
 import 'package:trailerhustle_admin/models/stolen_report_data.dart';
+import 'package:trailerhustle_admin/pages/stolen_zones_map_page.dart';
 import 'package:trailerhustle_admin/services/sidebar_controller.dart';
 import 'package:trailerhustle_admin/services/stolen_report_service.dart';
 import 'package:trailerhustle_admin/supabase/supabase_config.dart';
@@ -12,8 +13,6 @@ import 'package:trailerhustle_admin/theme/theme_provider.dart';
 import 'package:trailerhustle_admin/widgets/adaptive_sidebar.dart';
 import 'package:trailerhustle_admin/widgets/dashboard_header.dart';
 import 'package:trailerhustle_admin/widgets/sidebar.dart';
-
-enum _PushMode { live, testIncludeReporter, dryRun }
 
 class StolenTrailersPage extends StatefulWidget {
   const StolenTrailersPage({super.key});
@@ -142,7 +141,7 @@ class _StolenTrailersPageState extends State<StolenTrailersPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-                'Approving will mark trailer #${r.trailerId} (${r.displayName}) as stolen and notify nearby users via the geofence.'),
+                'Approving will mark trailer #${r.trailerId} (${r.displayName}) as stolen. After approval, you\'ll draw alert zones on a map; the push goes out only after you confirm the zones.'),
             const SizedBox(height: 12),
             TextField(
               controller: adminNoteCtl,
@@ -184,14 +183,17 @@ class _StolenTrailersPageState extends State<StolenTrailersPage> {
         _snack('Approve failed (report may have already been moderated)');
         return;
       }
-      // Fan out the geofence push (best-effort).
-      final result = await StolenReportService.notifyNearby(reportId: r.id);
-      if (result == null) {
+      if (!mounted) return;
+      final fired = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) =>
+              StolenZonesMapPage(report: approved, justApproved: true),
+          settings: const RouteSettings(name: 'stolen_zones_map'),
+        ),
+      );
+      if (fired != true) {
         _snack(
-            'Approved. Geofence push could not be sent — try again from the row menu.');
-      } else {
-        _snack(
-            'Approved. Notified ${result.totalSent}/${result.totalTargets} nearby users.');
+            'Approved. Push not sent yet — use "Send geofence push" on the row to send it later.');
       }
       await _fetchData();
     } finally {
@@ -299,44 +301,17 @@ class _StolenTrailersPageState extends State<StolenTrailersPage> {
 
   Future<void> _resendNearbyPush(StolenReportData r) async {
     if (_busyReportIds.contains(r.id)) return;
-    final mode = await showDialog<_PushMode>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Send geofence push'),
-        content: const Text(
-            'Choose how to fan out the push for this approved report.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(_PushMode.dryRun),
-            child: const Text('Dry-run (count only)'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(_PushMode.testIncludeReporter),
-            child: const Text('Test (include reporter)'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(_PushMode.live),
-            child: const Text('Send live'),
-          ),
-        ],
-      ),
-    );
-    if (mode == null) return;
     if (!mounted) return;
     setState(() => _busyReportIds.add(r.id));
     try {
-      final result = await StolenReportService.notifyNearby(
-        reportId: r.id,
-        includeReporter: mode == _PushMode.testIncludeReporter,
-        dryRun: mode == _PushMode.dryRun,
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) =>
+              StolenZonesMapPage(report: r, justApproved: false),
+          settings: const RouteSettings(name: 'stolen_zones_map_resend'),
+        ),
       );
-      if (result == null) {
-        _snack('Push fan-out failed');
-      } else if (mode == _PushMode.dryRun) {
-        _snack('Dry-run: ${result.totalTargets} devices would be notified');
-      } else {
-        _snack('Notified ${result.totalSent}/${result.totalTargets} nearby users');
-      }
+      await _fetchData();
     } finally {
       if (mounted) setState(() => _busyReportIds.remove(r.id));
     }

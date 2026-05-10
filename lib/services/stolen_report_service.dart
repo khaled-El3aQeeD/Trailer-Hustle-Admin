@@ -6,6 +6,9 @@ import 'package:trailerhustle_admin/supabase/supabase_config.dart';
 /// Status filter values for the stolen-trailers admin page.
 enum StolenStatusFilter { pending, approved, retrieved, rejected, cancelled, all }
 
+/// One admin-drawn alert circle (center + radius in miles).
+typedef ZoneArg = ({double centerLat, double centerLng, double radiusMiles});
+
 /// Service for fetching and moderating stolen trailer reports.
 class StolenReportService {
   static const String _table = 'stolen_trailer_reports';
@@ -200,9 +203,12 @@ class StolenReportService {
     }
   }
 
-  /// Trigger the geofence push fan-out for an approved report.
+  /// Trigger the alert push fan-out for an approved report.
   /// Returns the edge-function summary or null on failure.
   ///
+  /// [zones]: optional admin-drawn circles. If non-empty, the edge function
+  /// notifies any user inside ANY zone (union). If null/empty, the function
+  /// falls back to radius mode around the report's stolen location.
   /// [includeReporter]: test-only flag. When true, the reporter's own device
   /// is also included in the fan-out so the admin can verify push delivery
   /// using the same account that filed the report.
@@ -214,16 +220,26 @@ class StolenReportService {
     int? radiusMilesOverride,
     bool includeReporter = false,
     bool dryRun = false,
+    List<ZoneArg>? zones,
   }) async {
     try {
+      final body = <String, dynamic>{
+        'report_id': reportId,
+        if (radiusMilesOverride != null) 'radius_miles': radiusMilesOverride,
+        if (includeReporter) 'bypass_reporter_exclusion': true,
+        if (dryRun) 'dry_run': true,
+        if (zones != null && zones.isNotEmpty)
+          'zones': zones
+              .map((z) => {
+                    'center_lat': z.centerLat,
+                    'center_lng': z.centerLng,
+                    'radius_miles': z.radiusMiles,
+                  })
+              .toList(),
+      };
       final response = await SupabaseConfig.client.functions.invoke(
         _notifyEdgeFunction,
-        body: {
-          'report_id': reportId,
-          if (radiusMilesOverride != null) 'radius_miles': radiusMilesOverride,
-          if (includeReporter) 'bypass_reporter_exclusion': true,
-          if (dryRun) 'dry_run': true,
-        },
+        body: body,
       );
       if (response.status != 200) {
         debugPrint(

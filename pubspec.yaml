@@ -19,6 +19,7 @@ dependencies:
   provider: ^6.1.5    # State management
   shared_preferences: ^2.3.0  # Persist sidebar state
   fl_chart: 0.68.0
+  google_maps_flutter: ^2.12.1
 
 dev_dependencies:
   flutter_test:
