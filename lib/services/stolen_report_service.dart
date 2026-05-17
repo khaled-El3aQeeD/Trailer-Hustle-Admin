@@ -15,7 +15,32 @@ class StolenReportService {
   static const String _trailersTable = 'Trailers';
   static const String _notifyEdgeFunction = 'notify-stolen-trailer-nearby';
   static const String _userNotificationsTable = 'notifications';
+  static const String _appConfigTable = 'app_config';
+  static const String _radiusConfigKey = 'stolen_alert_radius_miles';
+  static const int _defaultAlertRadiusFallback = 800;
   static const int _userNotificationTypeStolen = 14;
+
+  /// Read the geofence radius the edge function will use when an admin
+  /// triggers a radius-mode send without an explicit override. Mirrors the
+  /// edge function's `app_config` lookup so the admin UI can preview the
+  /// value and warn before firing.
+  static Future<int> getDefaultAlertRadiusMiles() async {
+    try {
+      final rows = await SupabaseConfig.client
+          .from(_appConfigTable)
+          .select('value')
+          .eq('key', _radiusConfigKey)
+          .eq('is_enabled', true)
+          .limit(1);
+      if ((rows as List).isEmpty) return _defaultAlertRadiusFallback;
+      final v = int.tryParse(rows.first['value'].toString());
+      if (v == null || v <= 0) return _defaultAlertRadiusFallback;
+      return v;
+    } catch (e) {
+      debugPrint('StolenReportService.getDefaultAlertRadiusMiles error: $e');
+      return _defaultAlertRadiusFallback;
+    }
+  }
 
   /// Fetch a paginated slice of reports.
   static Future<({List<StolenReportData> items, int total})> fetchPaginated({

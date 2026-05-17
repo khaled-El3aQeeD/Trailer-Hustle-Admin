@@ -52,6 +52,32 @@ class _StolenZonesMapPageState extends State<StolenZonesMapPage> {
   bool _sending = false;
   GoogleMapController? _mapController;
 
+  /// Radius (in miles) the edge function will fall back to when the admin
+  /// fires a radius-mode send. Loaded from `app_config` on init so the UI
+  /// can preview the value and warn loudly when it's huge (e.g. 800 mi).
+  int _fallbackRadiusMiles = 800;
+  bool _loadingFallbackRadius = true;
+
+  /// Above this threshold the radius send is treated as "large" and the
+  /// confirmation dialog switches to a warning style. 250 mi already
+  /// covers a multi-state region — anything above warrants a second look.
+  static const int _largeRadiusThresholdMiles = 250;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFallbackRadius();
+  }
+
+  Future<void> _loadFallbackRadius() async {
+    final r = await StolenReportService.getDefaultAlertRadiusMiles();
+    if (!mounted) return;
+    setState(() {
+      _fallbackRadiusMiles = r;
+      _loadingFallbackRadius = false;
+    });
+  }
+
   bool get _hasOrigin =>
       widget.report.stolenLat != null && widget.report.stolenLng != null;
 
@@ -175,12 +201,93 @@ class _StolenZonesMapPageState extends State<StolenZonesMapPage> {
 
   Future<void> _sendRadius() async {
     if (_sending) return;
+    final confirmed = await _confirmRadiusSend();
+    if (!confirmed || !mounted) return;
     setState(() => _sending = true);
     final result =
         await StolenReportService.notifyNearby(reportId: widget.report.id);
     if (!mounted) return;
     setState(() => _sending = false);
     _showResultAndPop(result, mode: 'radius');
+  }
+
+  /// Confirmation dialog shown before firing a radius-mode push. When the
+  /// configured radius is large (>= [_largeRadiusThresholdMiles]) the dialog
+  /// switches to a warning style so admins don't accidentally blast users
+  /// hundreds of miles away with a single click.
+  Future<bool> _confirmRadiusSend() async {
+    final radius = _fallbackRadiusMiles;
+    final isLarge = radius >= _largeRadiusThresholdMiles;
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: !_sending,
+      builder: (ctx) {
+        return AlertDialog(
+          icon: Icon(
+            isLarge ? Icons.warning_amber_rounded : Icons.help_outline,
+            size: 40,
+            color: isLarge ? Colors.orange : null,
+          ),
+          title: Text(
+            isLarge ? 'Large alert radius' : 'Send radius alert?',
+          ),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'This will notify every user with a registered location '
+                  'within $radius miles of the stolen location.',
+                ),
+                const SizedBox(height: 12),
+                if (isLarge)
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: Colors.orange.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: Text(
+                      '$radius miles covers a very large area — recipients '
+                      'hundreds of miles away may treat this as spam. '
+                      'Consider going back and drawing tighter zones on the '
+                      'map instead.',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  )
+                else
+                  const Text(
+                    'You can also cancel and draw tighter zones on the map '
+                    'for a more targeted alert.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: isLarge
+                  ? FilledButton.styleFrom(backgroundColor: Colors.orange)
+                  : null,
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(
+                isLarge ? 'Send anyway ($radius mi)' : 'Send ($radius mi)',
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    return result == true;
   }
 
   void _showResultAndPop(
@@ -249,6 +356,9 @@ class _StolenZonesMapPageState extends State<StolenZonesMapPage> {
       sending: _sending,
       minRadius: _minRadiusMiles,
       maxRadius: _maxRadiusMiles,
+      fallbackRadiusMiles: _fallbackRadiusMiles,
+      loadingFallbackRadius: _loadingFallbackRadius,
+      largeRadiusThresholdMiles: _largeRadiusThresholdMiles,
       onSelectZone: _selectZone,
       onRadiusChanged: _updateRadius,
       onRemoveSelected: _removeSelected,
@@ -298,6 +408,9 @@ class _SidePanel extends StatelessWidget {
     required this.sending,
     required this.minRadius,
     required this.maxRadius,
+    required this.fallbackRadiusMiles,
+    required this.loadingFallbackRadius,
+    required this.largeRadiusThresholdMiles,
     required this.onSelectZone,
     required this.onRadiusChanged,
     required this.onRemoveSelected,
@@ -315,6 +428,9 @@ class _SidePanel extends StatelessWidget {
   final bool sending;
   final double minRadius;
   final double maxRadius;
+  final int fallbackRadiusMiles;
+  final bool loadingFallbackRadius;
+  final int largeRadiusThresholdMiles;
   final void Function(String id) onSelectZone;
   final void Function(double miles) onRadiusChanged;
   final VoidCallback onRemoveSelected;
@@ -486,14 +602,47 @@ class _SidePanel extends StatelessWidget {
                 const SizedBox(height: 8),
                 Tooltip(
                   message: hasOrigin
-                      ? 'Notify all users within the default radius around the stolen location.'
+                      ? 'Notify all users within $fallbackRadiusMiles mi of the stolen location. You will be asked to confirm.'
                       : 'No coordinates on this report — radius fallback unavailable.',
                   child: OutlinedButton.icon(
                     onPressed: canSendRadius ? onSendRadius : null,
-                    icon: const Icon(Icons.radar),
-                    label: const Text('Skip — send by radius (fallback)'),
+                    icon: Icon(
+                      Icons.radar,
+                      color: fallbackRadiusMiles >= largeRadiusThresholdMiles
+                          ? Colors.orange
+                          : null,
+                    ),
+                    label: Text(
+                      loadingFallbackRadius
+                          ? 'Skip — send by radius'
+                          : 'Skip — send by radius ($fallbackRadiusMiles mi)',
+                    ),
                   ),
                 ),
+                if (!loadingFallbackRadius &&
+                    fallbackRadiusMiles >= largeRadiusThresholdMiles &&
+                    hasOrigin) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        size: 14,
+                        color: Colors.orange,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          'Large radius — covers a multi-state area.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.orange.shade800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 8),
                 TextButton(
                   onPressed: sending ? null : onCancel,
